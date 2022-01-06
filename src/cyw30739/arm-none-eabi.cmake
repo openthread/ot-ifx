@@ -1,6 +1,5 @@
-#!/bin/bash
 #
-#  Copyright (c) 2020, The OpenThread Authors.
+#  Copyright (c) 2021, The OpenThread Authors.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -27,62 +26,28 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-set -euxo pipefail
+set(CMAKE_SYSTEM_NAME              Generic)
+set(CMAKE_SYSTEM_PROCESSOR         ARM)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE  STATIC_LIBRARY)
 
-install_packages_apt()
-{
-    echo 'Installing script dependencies...'
+file(GLOB TOOLS_DIR $ENV{HOME}/ModusToolbox/tools_*/gcc/bin)
+if(TOOLS_DIR)
+    set(TOOLS_DIR ${TOOLS_DIR}/)
+endif()
 
-    # apt-get update and install dependencies
-    sudo apt-get update
-    sudo apt-get --no-install-recommends install -y coreutils
+set(CMAKE_C_COMPILER               ${TOOLS_DIR}arm-none-eabi-gcc)
+set(CMAKE_CXX_COMPILER             ${TOOLS_DIR}arm-none-eabi-g++)
+set(CMAKE_ASM_COMPILER             ${TOOLS_DIR}arm-none-eabi-as)
+set(CMAKE_RANLIB                   ${TOOLS_DIR}arm-none-eabi-ranlib)
 
-}
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpversion OUTPUT_VARIABLE COMPILER_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-install_packages_opkg()
-{
-    echo 'opkg not supported currently' && false
-}
+set(COMMON_ARCH_FLAGS              "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard")
+set(COMMON_C_FLAGS                 "${COMMON_ARCH_FLAGS} -specs=nano.specs -fdata-sections -ffunction-sections -g3")
 
-install_packages_rpm()
-{
-    echo 'rpm not supported currently' && false
-}
+set(CMAKE_C_FLAGS_INIT             "${COMMON_C_FLAGS} -std=c11")
+set(CMAKE_CXX_FLAGS_INIT           "${COMMON_C_FLAGS} -std=c++17")
+set(CMAKE_EXE_LINKER_FLAGS_INIT    "${COMMON_ARCH_FLAGS}")
 
-install_packages_brew()
-{
-    echo 'Installing script dependencies...'
-    brew install coreutils
-}
-
-install_packages_source()
-{
-    echo 'source not supported currently' && false
-}
-
-install_packages()
-{
-    PM=source
-    if command -v apt-get; then
-        PM=apt
-    elif command -v rpm; then
-        PM=rpm
-    elif command -v opkg; then
-        PM=opkg
-    elif command -v brew; then
-        PM=brew
-    fi
-    install_packages_$PM
-}
-
-main()
-{
-    install_packages
-
-    echo "Bootstrapping openthread"
-    "$(dirname "$0")"/../openthread/script/bootstrap
-
-    echo "Bootstrap completed successfully."
-}
-
-main
+set(CMAKE_C_FLAGS_DEBUG            "-Os")
+set(CMAKE_CXX_FLAGS_DEBUG          "-Os")

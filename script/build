@@ -27,43 +27,192 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-set -euxo pipefail
+###################################################################################################
+#
+# Utilities
+#
+###################################################################################################
+die()
+{
+    echo " ** ERROR: $1"
+    exit 1
+}
 
-OT_CMAKE_NINJA_TARGET=${OT_CMAKE_NINJA_TARGET:-}
+available_platforms_load()
+{
+    cd "$repo_dir"/third_party/infineon/platform
 
-readonly OT_SRCDIR="$(pwd)"
-readonly OT_OPTIONS=(
-    "-DCMAKE_TOOLCHAIN_FILE=src/arm-none-eabi.cmake"
-    "-DCMAKE_BUILD_TYPE=MinSizeRel"
-    "-DOT_PLATFORM=external"
-    "-DOT_SLAAC=ON"
-)
+    local folders=""
+    mapfile -d '' folders < <(find . -maxdepth 1 -type d -print0 | tr -d './')
+
+    local i=0
+    for folder in "${folders[@]}"; do
+        if [[ ${#folder} != 0 ]]; then
+            IFX_PLATFORMS[i++]="$folder"
+        fi
+    done
+
+    cd "$current_dir"
+
+    echo "Available Platforms: ${IFX_PLATFORMS[*]}"
+}
+
+available_boards_load()
+{
+    cd "$repo_dir"/third_party/infineon/platform/"$1"/bsp
+
+    local folders=()
+    mapfile -d '' folders < <(find . -maxdepth 1 -type d -print0 | tr -d './')
+
+    local i=0
+    for folder in "${folders[@]}"; do
+        if [[ ${#folder} != 0 ]]; then
+            IFX_BOARDS[i++]="$folder"
+        fi
+    done
+
+    cd "$current_dir"
+
+    echo "Available Boards for $1: ${IFX_BOARDS[*]}"
+}
 
 build()
 {
-    local builddir="${OT_CMAKE_BUILD_DIR:-build}"
+    # Create the output folder
+    builddir="${OT_CMAKE_BUILD_DIR:-$repo_dir/build/$1}"
+    shift
 
-    mkdir -p "${builddir}"
-    cd "${builddir}"
+    echo "Output folder: $builddir"
 
-    cmake -GNinja -DOT_COMPILE_WARNING_AS_ERROR=ON "$@" "${OT_SRCDIR}"
-
-    if [[ -n ${OT_CMAKE_NINJA_TARGET[*]} ]]; then
-        ninja "${OT_CMAKE_NINJA_TARGET[@]}"
-    else
-        ninja
-    fi
-
-    cd "${OT_SRCDIR}"
+    cmake -GNinja "$@" -S "${repo_dir}" -B "${builddir}"
+    cmake --build "${builddir}" -t "${OT_CMAKE_NINJA_TARGET[@]}"
 }
 
 main()
 {
+    # Read target platform.
+    local target_platform="$1"
+
+    # Read target board
+    shift
+    local target_board="$1"
+
+    # Read build options from command line
+    shift
+    local cmdline_options=("$@")
+
+    # Load general options
     local options=("${OT_OPTIONS[@]}")
 
-    options+=("$@")
+    options+=("-DCMAKE_TOOLCHAIN_FILE=src/${target_platform}/arm-none-eabi.cmake")
 
-    build "${options[@]}"
+    echo "Building $target_board ($target_platform)"
+    echo "User specified build options: ${cmdline_options[*]}"
+    echo "General options: ${options[*]}}"
+    build "$target_board" -DOT_BUILD_EXECUTABLES=OFF -DIFX_PLATFORM="$target_platform" -DIFX_BOARD="$target_board" "${options[@]}" "${cmdline_options[@]}"
 }
 
-main "$@"
+###################################################################################################
+#
+# Program Start
+#
+###################################################################################################
+
+#set -euxo pipefail
+set -euo pipefail
+
+OT_CMAKE_NINJA_TARGET=${OT_CMAKE_NINJA_TARGET:-}
+
+readonly OT_OPTIONS=(
+    "-DCMAKE_BUILD_TYPE=Debug"
+    "-DOT_PLATFORM=external"
+    "-DI15DOT4_IEEE_EUI64="
+    "-DOT_APP_NCP=OFF"
+    "-DOT_APP_RCP=OFF"
+    "-DOT_DHCP6_CLIENT=ON"
+    "-DOT_JOINER=ON"
+    "-DOT_RCP=OFF"
+    "-DOT_SLAAC=ON"
+    "-DOT_THREAD_VERSION=1.2"
+    "-DOT_LOG_LEVEL=CRIT"
+)
+
+# Keep folder information
+if [[ -n ${BASH_SOURCE[0]} ]]; then
+    script_path="${BASH_SOURCE[0]}"
+else
+    script_path="$0"
+fi
+
+script_dir="$(dirname "$(realpath "$script_path")")"
+repo_dir="$(dirname "$script_dir")"
+current_dir=$(pwd)
+
+# Parse input parameters
+target_platform=''
+target_board=''
+cmdline_options=()
+if [[ $# == 0 ]]; then
+    # Load available platforms
+    available_platforms_load
+
+    for target_platform in "${IFX_PLATFORMS[@]}"; do
+        # Load available boards for target platform
+        available_boards_load "$target_platform"
+    done
+
+    die "Please used platform=XXX and board=YYY to specifiy target board or use make all to build all available executables."
+elif [[ $1 == "all" ]]; then # Build all supported platforms with all supported boards
+    # Parse command line options
+    shift
+    cmdline_options+=("$@")
+
+    # Load available platforms
+    available_platforms_load
+
+    for target_platform in "${IFX_PLATFORMS[@]}"; do
+        # Load available boards for target platform
+        available_boards_load "$target_platform"
+
+        for target_board in "${IFX_BOARDS[@]}"; do
+            main "$target_platform" "$target_board" "${cmdline_options[@]}"
+        done
+    done
+else
+    # Build specified platform with specified board
+    sub_string_platform="platform="
+    sub_string_board="board="
+    for param in "$@"; do
+        if [[ $param == "$sub_string_platform"* ]]; then
+            target_platform=${param##"$sub_string_platform"}
+        elif [[ $param == "$sub_string_board"* ]]; then
+            target_board=${param##"$sub_string_board"}
+        else
+            cmdline_options+=("$param")
+        fi
+    done
+
+    # Check if target platform has been assigned
+    if [ -z "$target_platform" ]; then
+        die "target platform has not been assigned"
+    fi
+
+    # Load available platforms
+    available_platforms_load
+
+    # Check if the target platform is available
+    echo "${IFX_PLATFORMS[@]}" | grep -wq "$target_platform" || die "Unsupported platform $target_platform"
+
+    # Check if target board has been assigned
+    if [ -z "$target_board" ]; then
+        die "target board has not been assigned"
+    fi
+
+    # Load available boards for target platform
+    available_boards_load $target_platform
+
+    # Check if the target board is available
+    echo "${IFX_BOARDS[@]}" | grep -wq "${target_board}" || die "Unsupported board $target_board for $target_platform"
+
+    main "$target_platform" "$target_board" "${cmdline_options[@]}"
+fi
