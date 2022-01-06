@@ -29,24 +29,17 @@
 
 set -euxo pipefail
 
-readonly OT_BUILDDIR="$(pwd)/build"
+if [[ -n ${BASH_SOURCE[0]} ]]; then
+    script_path="${BASH_SOURCE[0]}"
+else
+    script_path="$0"
+fi
 
-readonly OT_OPTIONS=(
-    "-DOT_COMPILE_WARNING_AS_ERROR=ON"
-    "-DOT_COMMISSIONER=ON"
-    "-DOT_DHCP6_CLIENT=ON"
-    "-DOT_DHCP6_SERVER=ON"
-    "-DOT_DNS_CLIENT=ON"
-    "-DOT_JOINER=ON"
-    "-DOT_THREAD_VERSION=1.1"
-)
+script_dir="$(dirname "$(realpath "$script_path")")"
 
 main()
 {
-    export CPPFLAGS="${CPPFLAGS:-} -DNDEBUG"
-
-    rm -rf "$OT_BUILDDIR"
-    "$(dirname "$0")"/build "${OT_OPTIONS[@]}"
+    "$script_dir"/build all
 }
 
 main "$@"
