@@ -1,6 +1,5 @@
-#!/bin/bash
 #
-#  Copyright (c) 2020, The OpenThread Authors.
+#  Copyright (c) 2021, The OpenThread Authors.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -27,62 +26,23 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-set -euxo pipefail
+add_library(
+                infineon-board-${IFX_BOARD}
+                COMPONENT_bsp_design_modus/GeneratedSource/cycfg_pins.c
+                TARGET_CYW930739M2EVB-01/platform.c
+           )
 
-install_packages_apt()
-{
-    echo 'Installing script dependencies...'
+# Add include directory for platform board library
+target_include_directories(
+                            infineon-board-${IFX_BOARD}
+                            PUBLIC
+                                TARGET_CYW930739M2EVB-01
+                                ${PROJECT_SOURCE_DIR}/third_party/infineon/btsdk-include
+                          )
 
-    # apt-get update and install dependencies
-    sudo apt-get update
-    sudo apt-get --no-install-recommends install -y coreutils
-
-}
-
-install_packages_opkg()
-{
-    echo 'opkg not supported currently' && false
-}
-
-install_packages_rpm()
-{
-    echo 'rpm not supported currently' && false
-}
-
-install_packages_brew()
-{
-    echo 'Installing script dependencies...'
-    brew install coreutils
-}
-
-install_packages_source()
-{
-    echo 'source not supported currently' && false
-}
-
-install_packages()
-{
-    PM=source
-    if command -v apt-get; then
-        PM=apt
-    elif command -v rpm; then
-        PM=rpm
-    elif command -v opkg; then
-        PM=opkg
-    elif command -v brew; then
-        PM=brew
-    fi
-    install_packages_$PM
-}
-
-main()
-{
-    install_packages
-
-    echo "Bootstrapping openthread"
-    "$(dirname "$0")"/../openthread/script/bootstrap
-
-    echo "Bootstrap completed successfully."
-}
-
-main
+# Set the dependency between platform board library and platform base library
+target_link_libraries(
+                        infineon-board-${IFX_BOARD}
+                        PRIVATE
+                            infineon-base-${IFX_PLATFORM}
+                     )

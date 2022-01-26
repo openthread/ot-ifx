@@ -1,6 +1,5 @@
-#!/bin/bash
 #
-#  Copyright (c) 2020, The OpenThread Authors.
+#  Copyright (c) 2021, The OpenThread Authors.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -27,62 +26,20 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-set -euxo pipefail
+# Add third part source files to mbedtls library
+list(APPEND thirdparty_src ${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/mbedtls/library/ccm_alt.c)
+list(APPEND thirdparty_lib infineon-base-${IFX_PLATFORM})
+list(
+        APPEND
+        OT_PUBLIC_INCLUDES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/mbedtls/include"
+    )
 
-install_packages_apt()
-{
-    echo 'Installing script dependencies...'
+# Add replaced aes ccm utilities to openthread stack
+list(APPEND COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/crypto/aes_ccm_alt.cpp)
 
-    # apt-get update and install dependencies
-    sudo apt-get update
-    sudo apt-get --no-install-recommends install -y coreutils
-
-}
-
-install_packages_opkg()
-{
-    echo 'opkg not supported currently' && false
-}
-
-install_packages_rpm()
-{
-    echo 'rpm not supported currently' && false
-}
-
-install_packages_brew()
-{
-    echo 'Installing script dependencies...'
-    brew install coreutils
-}
-
-install_packages_source()
-{
-    echo 'source not supported currently' && false
-}
-
-install_packages()
-{
-    PM=source
-    if command -v apt-get; then
-        PM=apt
-    elif command -v rpm; then
-        PM=rpm
-    elif command -v opkg; then
-        PM=opkg
-    elif command -v brew; then
-        PM=brew
-    fi
-    install_packages_$PM
-}
-
-main()
-{
-    install_packages
-
-    echo "Bootstrapping openthread"
-    "$(dirname "$0")"/../openthread/script/bootstrap
-
-    echo "Bootstrap completed successfully."
-}
-
-main
+list(
+        APPEND
+        COMMON_INCLUDES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/crypto"
+        )
