@@ -211,9 +211,11 @@ static void settings_entry_release(settings_entry_t *p_target_entry)
     memset((void *)p_target_entry, 0, sizeof(settings_entry_t));
 }
 
-void otPlatSettingsInit(otInstance *aInstance)
+void otPlatSettingsInit(otInstance *aInstance, const uint16_t *aSensitiveKeys, uint16_t aSensitiveKeysLength)
 {
     OT_UNUSED_VARIABLE(aInstance);
+    OT_UNUSED_VARIABLE(aSensitiveKeys);
+    OT_UNUSED_VARIABLE(aSensitiveKeysLength);
 
     SETTINGS_TRACE("%s\n", __FUNCTION__);
 
