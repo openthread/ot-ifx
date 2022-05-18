@@ -38,6 +38,10 @@
 
 #include "i15dot4_types.h"
 
+#ifndef I15DOT4_VARAIABLE_ACK_LENGTH
+#define I15DOT4_VARAIABLE_ACK_LENGTH 1
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
+
 typedef enum _CONTEXT_ID_t
 {
     CONTEXT_ID_ZBPRO = 0,
@@ -57,13 +61,20 @@ typedef enum
 {
     ADDR_MATCH_DISABLE         = 0,
     ADDR_MATCH_ENABLE          = 1,
-    ADDR_MATCH_SHORT_ADD       = 2,
-    ADDR_MATCH_EXT_ADD         = 3,
-    ADDR_MATCH_SHORT_CLEAR     = 4,
-    ADDR_MATCH_SHORT_CLEAR_ALL = 5,
-    ADDR_MATCH_EXT_CLEAR       = 6,
-    ADDR_MATCH_EXT_CLEAR_ALL   = 7,
+    ADDR_MATCH_ADD             = 2,
+    ADDR_MATCH_CLEAR           = 3,
+    ADDR_MATCH_CLEAR_ALL       = 4,
+    ADDR_MATCH_SET_KEY         = 5,
+    ADDR_MATCH_SET_KEY_ID_MODE = 6,
+    ADDR_MATCH_SET_KEY_INDEX   = 7,
 } ADDR_MATCH_ACTION_t;
+
+typedef enum
+{
+    I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING = 0x01,
+    I15DOT4_ADDR_MATCH_FLAG_VENDOR_IE     = 0x02,
+    I15DOT4_ADDR_MATCH_FLAG_EXT_ADDR_MODE = 0x80,
+} ADDR_MATCH_TYPE_t;
 
 /* MLME/MCPS status */
 typedef enum
@@ -143,7 +154,11 @@ enum
     I15DOT4_MAX_MAC_PAYLOAD_SIZE        = I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_MIN_MPDU_OVERHEAD,
     I15DOT4_MAX_BEACON_PAYLOAD_LENGTH   = I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_MAX_BEACON_OVERHEAD,
     I15DOT4_FCS_LENGTH                  = 2,
-    I15DOT4_ACK_LENGTH                  = 3,
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    I15DOT4_ACK_LENGTH = I15DOT4_MAX_PHY_PACKET_SIZE,
+#else
+    I15DOT4_ACK_LENGTH = 3,
+#endif
 };
 
 /* Command/Event ID */
@@ -1013,21 +1028,32 @@ typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_REQ
     uint8_t  max_frame_retries;
     uint8_t  csma_ca_enabled : 1;
     uint8_t  csl_present : 1;
-    uint8_t  is_security_processed : 1;
+    uint8_t  security_enable : 1;
     uint8_t  reserved : 5;
+    uint8_t  key_id_mode;
+    uint8_t  key_index;
+    uint8_t  sec_hdr_offset;
+    uint8_t  sec_hdr_len;
+    uint8_t  payload_offset;
+    uint8_t  payload_len;
     uint8_t  psdu_length;
     uint8_t  psdu[I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_FCS_LENGTH];
 } I15DOT4_THREAD_DATA_REQ_t;
 
 typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_CONF
 {
-    uint8_t  context_id;
-    uint8_t  cmd_id;
-    uint8_t  handle;
-    uint8_t  status;
-    uint8_t  reserved;
+    uint8_t context_id;
+    uint8_t cmd_id;
+    uint8_t handle;
+    uint8_t status;
+#if !I15DOT4_VARAIABLE_ACK_LENGTH
+    uint8_t reserved;
+#endif
     uint32_t time_stamp;
-    uint8_t  ack_frame[I15DOT4_ACK_LENGTH];
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    uint8_t ack_frame_length;
+#endif
+    uint8_t ack_frame[I15DOT4_ACK_LENGTH];
 } I15DOT4_THREAD_DATA_CONF_t;
 
 typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_IND
@@ -1048,6 +1074,9 @@ typedef struct __attribute__((packed)) _I15DOT4_THREAD_ADDR_MATCH_REQ
     uint8_t        cmd_id;
     uint8_t        action;
     I15DOT4_ADDR_t addr;
+    uint8_t        flag; // refer to ADDR_MATCH_TYPE_t
+    uint8_t        buf_len;
+    uint8_t        buf[16];
 } I15DOT4_THREAD_ADDR_MATCH_REQ_t;
 
 typedef struct __attribute__((packed)) _I15DOT4_THREAD_ADDR_MATCH_CONF

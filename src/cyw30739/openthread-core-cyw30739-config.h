@@ -73,4 +73,28 @@
  */
 #define OPENTHREAD_CONFIG_SRP_CLIENT_BUFFERS_MAX_HOST_ADDRESSES 4
 
+/**
+ * @def OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+ *
+ * Define to 1 to enable Thread Test Harness reference device support.
+ *
+ */
+#define OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE 1
+
+/**
+ * @def RADIO_CONFIG_SRC_MATCH_SHORT_ENTRY_NUM
+ *
+ * The number of short source address table entries.
+ *
+ */
+#define RADIO_CONFIG_SRC_MATCH_SHORT_ENTRY_NUM 0
+
+/**
+ * @def RADIO_CONFIG_SRC_MATCH_EXT_ENTRY_NUM
+ *
+ * The number of extended source address table entries.
+ *
+ */
+#define RADIO_CONFIG_SRC_MATCH_EXT_ENTRY_NUM 0
+
 #endif /* OPENTHREAD_CORE_CYW30739_CONFIG_H_ */

@@ -85,7 +85,7 @@ build()
     echo "Output folder: $builddir"
 
     cmake -GNinja "$@" -S "${repo_dir}" -B "${builddir}"
-    cmake --build "${builddir}" -t "${OT_CMAKE_NINJA_TARGET[@]}"
+    cmake --build "${builddir}"
 }
 
 main()
@@ -120,8 +120,6 @@ main()
 
 set -euxo pipefail
 
-OT_CMAKE_NINJA_TARGET=${OT_CMAKE_NINJA_TARGET:-}
-
 readonly OT_OPTIONS=(
     "-DCMAKE_BUILD_TYPE=Debug"
     "-DOT_PLATFORM=external"
@@ -134,6 +132,7 @@ readonly OT_OPTIONS=(
     "-DOT_SLAAC=ON"
     "-DOT_THREAD_VERSION=1.2"
     "-DOT_LOG_LEVEL=CRIT"
+    "-DOT_LINK_METRICS_SUBJECT=ON"
 )
 
 # Keep folder information

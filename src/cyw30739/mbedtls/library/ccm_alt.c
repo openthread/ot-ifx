@@ -50,9 +50,10 @@
 #include "mbedtls/platform_util.h"
 
 #include <string.h>
+
 #if defined(MBEDTLS_CCM_ALT)
 
-#define seceng_amicr0_adr 0x00440050 // base_seceng_top + 0x00000050
+#define seceng_amicr0_adr 0x00440050
 #define seceng_amdar_adr 0x00440068
 #define cr_seceng_clk_cfg_adr 0x00320228
 #define M_SECENG_CLOCK_ON REG32(cr_seceng_clk_cfg_adr) |= 3;
@@ -372,7 +373,7 @@ int mbedtls_ccm_encrypt_and_tag(mbedtls_ccm_context *ctx,
     if (tag_len == 0)
         return (MBEDTLS_ERR_CCM_BAD_INPUT);
 
-    return (ccm_auth_crypt(ctx, HW_AES_ENC, length, iv, iv_len, add, add_len, input, output, tag, tag_len));
+    return (mbedtls_ccm_star_encrypt_and_tag(ctx, length, iv, iv_len, add, add_len, input, output, tag, tag_len));
 }
 
 /*
@@ -389,8 +390,34 @@ int mbedtls_ccm_star_auth_decrypt(mbedtls_ccm_context *ctx,
                                   const unsigned char *tag,
                                   size_t               tag_len)
 {
-    return ccm_auth_crypt(ctx, HW_AES_DEC, length, iv, iv_len, add, add_len, input, output, (unsigned char *)tag,
-                          tag_len);
+    int           ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char i;
+    int           diff;
+
+    if ((ret = ccm_auth_crypt(ctx, HW_AES_DEC, length, iv, iv_len, add, add_len, input, output, ctx->decrypt_tag,
+                              tag_len)) != 0)
+    {
+        return ret;
+    }
+
+    /* input tag NULL means upper layer does not provide authenticated data to compare */
+    if (tag == NULL)
+    {
+        return (0);
+    }
+
+    /* Check tag in "constant-time" */
+    for (diff = 0, i = 0; i < tag_len; i++)
+    {
+        diff |= tag[i] ^ ctx->decrypt_tag[i];
+    }
+    if (diff != 0)
+    {
+        mbedtls_platform_zeroize(output, length);
+        return (MBEDTLS_ERR_CCM_AUTH_FAILED);
+    }
+
+    return (0);
 }
 
 int mbedtls_ccm_auth_decrypt(mbedtls_ccm_context *ctx,
@@ -407,9 +434,14 @@ int mbedtls_ccm_auth_decrypt(mbedtls_ccm_context *ctx,
     if (tag_len == 0)
         return (MBEDTLS_ERR_CCM_BAD_INPUT);
 
-    return ccm_auth_crypt(ctx, HW_AES_DEC, length, iv, iv_len, add, add_len, input, output, (unsigned char *)tag,
-                          tag_len);
+    return (mbedtls_ccm_star_auth_decrypt(ctx, length, iv, iv_len, add, add_len, input, output, tag, tag_len));
 }
+
+void mbedtls_ccm_get_decrypt_tag(mbedtls_ccm_context *ctx, const unsigned char *tag, size_t tag_len)
+{
+    memcpy((void *)tag, ctx->decrypt_tag, tag_len);
+}
+
 #endif /* !MBEDTLS_CCM_ALT */
 
 #endif /* MBEDTLS_CCM_C */

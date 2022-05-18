@@ -32,8 +32,13 @@
  */
 
 #include <openthread-core-config.h>
+#include <utils/code_utils.h>
+#include <utils/mac_frame.h>
 #include <openthread/platform/entropy.h>
 #include <openthread/platform/radio.h>
+#if OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
+#include <utils/link_metrics.h>
+#endif // OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
 
 #include <inttypes.h>
 #include <slist.h>
@@ -41,6 +46,7 @@
 #include <string.h>
 
 #include "i15dot4.h"
+#include "radio_wrapper.h"
 
 #include <hcidefs.h>
 #if PACKET_STATISTICS
@@ -64,6 +70,22 @@
 #define RADIO_TRACE(...)
 #endif
 
+#ifndef RADIO_SCHEDULED_TX_ENABLED
+#define RADIO_SCHEDULED_TX_ENABLED 1
+#ifndef RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+#define RADIO_SCHEDULED_TX_SOFTWARE_TIMER 1
+#endif // RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+#endif // RADIO_SCHEDULED_TX_ENABLED
+
+#if (RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER)
+#include <wiced_timer.h>
+#endif // RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+
+#ifndef RADIO_CLOCK_USE_1M_TIMER
+#define RADIO_CLOCK_USE_1M_TIMER 1
+#include <clock_timer.h>
+#endif
+
 #ifndef RADIO_TRANSMIT_POWER_IN_DBM
 #define RADIO_TRANSMIT_POWER_IN_DBM 0
 #endif // RADIO_TRANSMIT_POWER_IN_DBM
@@ -80,9 +102,16 @@
     (OT_RADIO_CAPS_ACK_TIMEOUT | OT_RADIO_CAPS_ENERGY_SCAN | OT_RADIO_CAPS_TRANSMIT_RETRIES | \
      OT_RADIO_CAPS_CSMA_BACKOFF | OT_RADIO_CAPS_SLEEP_TO_TX)
 #else // (OPENTHREAD_CONFIG_THREAD_VERSION != OT_THREAD_VERSION_1_1)
+#if (RADIO_SCHEDULED_TX_ENABLED)
 #define RADIO_CAPABILITY                                                                      \
     (OT_RADIO_CAPS_ACK_TIMEOUT | OT_RADIO_CAPS_ENERGY_SCAN | OT_RADIO_CAPS_TRANSMIT_RETRIES | \
-     OT_RADIO_CAPS_CSMA_BACKOFF | OT_RADIO_CAPS_SLEEP_TO_TX | OT_RADIO_CAPS_TRANSMIT_TIMING)
+     OT_RADIO_CAPS_CSMA_BACKOFF | OT_RADIO_CAPS_SLEEP_TO_TX | OT_RADIO_CAPS_TRANSMIT_SEC |    \
+     OT_RADIO_CAPS_TRANSMIT_TIMING)
+#else // !RADIO_SCHEDULED_TX_ENABLED
+#define RADIO_CAPABILITY                                                                      \
+    (OT_RADIO_CAPS_ACK_TIMEOUT | OT_RADIO_CAPS_ENERGY_SCAN | OT_RADIO_CAPS_TRANSMIT_RETRIES | \
+     OT_RADIO_CAPS_CSMA_BACKOFF | OT_RADIO_CAPS_SLEEP_TO_TX | OT_RADIO_CAPS_TRANSMIT_SEC)
+#endif // RADIO_SCHEDULED_TX_ENABLED
 #endif // (OPENTHREAD_CONFIG_THREAD_VERSION == OT_THREAD_VERSION_1_1)
 
 #define HCI_VSC_I15DOT4_META_OPCODE (HCI_GRP_VENDOR_SPECIFIC | 0x0177)
@@ -105,6 +134,11 @@
 #define I15DOT4_PHY_ED_THRESHOLD_VALUE (-70)
 #endif // defined(WICED_PLATFORM_I15DOT4_PHY_ED_THRESHOLD)
 
+/* Mapping RSSI to LQI in Platform Abstraction Layer instead of getting value from MAC layer. */
+#ifndef RADIO_LINK_COST_MAPPING
+#define RADIO_LINK_COST_MAPPING 1
+#endif // RADIO_LINK_COST_MAPPING
+
 typedef struct radio_i15dot4_mapping
 {
     uint8_t                                          req_id;
@@ -118,10 +152,18 @@ typedef struct radio_data_wait_conf_entry
     slist_node_t  node;
     otInstance *  aInstance;
     otRadioFrame *aTxFrame;
-    uint8_t       ackFrame[I15DOT4_ACK_LENGTH];
-    uint8_t       msdu_handle;
-    uint32_t      process_time;
-    uint8_t       status; // refer to I15DOT4_STATUS_t
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    struct
+    {
+        uint8_t length;
+        uint8_t content[I15DOT4_ACK_LENGTH];
+    } ackFrame;
+#else  // !I15DOT4_VARAIABLE_ACK_LENGTH
+    uint8_t ackFrame[I15DOT4_ACK_LENGTH];
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
+    uint8_t  msdu_handle;
+    uint32_t process_time;
+    uint8_t  status; // refer to I15DOT4_STATUS_t
 } radio_data_wait_conf_entry_t;
 
 typedef struct radio_data_received_frame
@@ -129,6 +171,17 @@ typedef struct radio_data_received_frame
     slist_node_t node;
     otRadioFrame rxFrame;
 } radio_data_received_frame_t;
+
+#if (RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER)
+
+typedef struct radio_csl_tx_element
+{
+    slist_node_t  node;
+    otInstance *  aInstance;
+    otRadioFrame *aTxFrame;
+    wiced_timer_t timer;
+} radio_csl_tx_element_t;
+#endif // RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER
 
 typedef struct radio_cb
 {
@@ -209,9 +262,40 @@ typedef struct radio_cb
 #if PACKET_STATISTICS
     PACKET_STATISTICS_t statistics;
 #endif // PACKET_STATISTICS
+
+#if (RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER)
+    struct
+    {
+        wiced_mutex_t *p_mutex;
+        uint32_t       event_code;
+        slist_node_t   waiting_queue; // refer to radio_csl_tx_element_t
+        slist_node_t   fired_queue;   // refer to radio_csl_tx_element_t
+    } csl_tx;
+#endif
+
+    /* MAC Security Material. */
+    struct
+    {
+        struct
+        {
+            otInstance *     aInstance;
+            uint8_t          aKeyIdMode;
+            uint8_t          aKeyId;
+            otMacKeyMaterial aKey;
+            otRadioKeyType   aKeyType;
+        } current;
+    } mac_security_material;
 } radio_cb_t;
 
 /* Declaration of static functions. */
+#if (RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER)
+static void          radio_csl_tx_queue_timeout_handler(void);
+static slist_node_t *radio_csl_tx_waiting_queue_add(otInstance *aInstance, otRadioFrame *aTxFrame);
+static void          radio_csl_tx_waiting_queue_timeout_callback(WICED_TIMER_PARAM_TYPE cb_params);
+#endif // RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+#if OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
+static void radio_enhanced_ack_content_set(const otShortAddress aShortAddress, const otExtAddress *aExtAddress);
+#endif // OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
 static void          radio_hci_vsc_command_queue_reset(void);
 static void          radio_hci_vsc_command_send(uint16_t opcode, uint8_t param_len, uint8_t *p_param);
 static void          radio_hci_vsc_command_send_handler(void *p_data);
@@ -242,15 +326,28 @@ static wiced_bool_t  radio_i15dot4_mlme_scan_req(uint8_t  scan_type,
                                                  uint8_t  scan_duration,
                                                  uint8_t  channel_page);
 static wiced_bool_t  radio_i15dot4_mlme_set_req(uint8_t attribute_id, uint32_t attribute_len, uint8_t *p_attribute);
-static wiced_bool_t  radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t action, I15DOT4_ADDR_t *p_addr);
+static wiced_bool_t  radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t action,
+                                                         uint8_t             flag,
+                                                         I15DOT4_ADDR_t *    p_addr,
+                                                         uint8_t *           p_data,
+                                                         uint8_t             data_len);
 static void          radio_i15dot4_thread_data_conf_handler(void);
 static void          radio_i15dot4_thread_data_ind_handler(void);
 static wiced_bool_t  radio_i15dot4_thread_data_req(otRadioFrame *aFrame, uint8_t msdu_handle);
 static void          radio_ieee_eui64_load(void);
-static void          radio_utils_data_display(uint8_t data_len, uint8_t *p_data);
-static void          radio_utils_i15dot4_thread_data_ind_display(I15DOT4_THREAD_DATA_IND_t *p_thread_data_ind);
-static void          radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t tx);
-static uint8_t       radio_utils_scan_time_to_scan_duration_calculate(uint32_t scan_time, uint8_t channel_num);
+static otError       radio_transmit_normal(otInstance *aInstance, otRadioFrame *aFrame);
+#if RADIO_SCHEDULED_TX_ENABLED
+static otError radio_transmit_scheduled_tx(otInstance *aInstance, otRadioFrame *aFrame);
+#endif // RADIO_SCHEDULED_TX_ENABLED
+static void radio_utils_data_display(uint8_t data_len, uint8_t *p_data);
+static void radio_utils_data_display_xtAddress(const otExtAddress *aExtAddress);
+static void radio_utils_data_display_uint64(uint64_t num);
+static void radio_utils_i15dot4_thread_data_ind_display(I15DOT4_THREAD_DATA_IND_t *p_thread_data_ind);
+static void radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t tx);
+#if RADIO_LINK_COST_MAPPING
+static uint8_t radio_utils_rssi_to_lqi_mapping(int8_t rssi);
+#endif // RADIO_LINK_COST_MAPPING
+static uint8_t radio_utils_scan_time_to_scan_duration_calculate(uint32_t scan_time, uint8_t channel_num);
 
 /* Declaration of static variables. */
 static radio_i15dot4_mapping_t radio_i15dot4_mapping_table[] = {
@@ -264,6 +361,13 @@ static radio_i15dot4_mapping_t radio_i15dot4_mapping_table[] = {
 };
 
 static radio_cb_t radio_cb = {0};
+
+#if RADIO_LINK_COST_MAPPING
+#define RADIO_RSSI_VALUE_GOOD (-40)
+#define RADIO_RSSI_RANGE abs(RADIO_RSSI_VALUE_GOOD - RADIO_RECEIVE_SENSITIVITY)
+#define RADIO_LQI_STEPS (8)
+#define RADIO_LQI_STEP (RADIO_RSSI_RANGE / (RADIO_LQI_STEPS - 1))
+#endif // RADIO_LINK_COST_MAPPING
 
 #if PACKET_STATISTICS
 
@@ -290,6 +394,78 @@ void otPlatRadioPacketStatisticsGet(PACKET_STATISTICS_t *p_statistics)
 }
 
 #endif // PACKET_STATISTICS
+
+/**
+ * Update MAC keys and key index
+ *
+ * This function is used when radio provides OT_RADIO_CAPS_TRANSMIT_SEC capability.
+ *
+ * @param[in]   aInstance    A pointer to an OpenThread instance.
+ * @param[in]   aKeyIdMode   The key ID mode.
+ * @param[in]   aKeyId       Current MAC key index.
+ * @param[in]   aPrevKey     A pointer to the previous MAC key.
+ * @param[in]   aCurrKey     A pointer to the current MAC key.
+ * @param[in]   aNextKey     A pointer to the next MAC key.
+ * @param[in]   aKeyType     Key Type used.
+ *
+ */
+void otPlatRadioSetMacKey(otInstance *            aInstance,
+                          uint8_t                 aKeyIdMode,
+                          uint8_t                 aKeyId,
+                          const otMacKeyMaterial *aPrevKey,
+                          const otMacKeyMaterial *aCurrKey,
+                          const otMacKeyMaterial *aNextKey,
+                          otRadioKeyType          aKeyType)
+{
+    OT_UNUSED_VARIABLE(aPrevKey);
+    OT_UNUSED_VARIABLE(aNextKey);
+
+    RADIO_TRACE("%s (aKeyIdMode: %u, aKeyId: %u, aKeyType: %u)\n", __FUNCTION__, aKeyIdMode >> 3, aKeyId, aKeyType);
+    RADIO_TRACE("Cur Key ");
+    radio_utils_data_display(OT_MAC_KEY_SIZE, (uint8_t *)aCurrKey->mKeyMaterial.mKey.m8);
+
+    /* Store information. */
+    radio_cb.mac_security_material.current.aInstance  = aInstance;
+    radio_cb.mac_security_material.current.aKeyIdMode = aKeyIdMode >> 3;
+    radio_cb.mac_security_material.current.aKeyId     = aKeyId;
+    memcpy((void *)&radio_cb.mac_security_material.current.aKey, (void *)aCurrKey, sizeof(otMacKeyMaterial));
+    radio_cb.mac_security_material.current.aKeyType = aKeyType;
+
+    /* Set current key to MAC. */
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_SET_KEY, 0, NULL,
+                                        aKeyType == OT_KEY_TYPE_LITERAL_KEY
+                                            ? (uint8_t *)aCurrKey->mKeyMaterial.mKey.m8
+                                            : (uint8_t *)&aCurrKey->mKeyMaterial.mKeyRef,
+                                        aKeyType == OT_KEY_TYPE_LITERAL_KEY ? sizeof(otMacKey) : sizeof(otMacKeyRef));
+
+    /* Set Key ID mode. */
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_SET_KEY_ID_MODE, 0, NULL,
+                                        &radio_cb.mac_security_material.current.aKeyIdMode,
+                                        sizeof(radio_cb.mac_security_material.current.aKeyIdMode));
+
+    /* Set Key Index. */
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_SET_KEY_INDEX, 0, NULL,
+                                        &radio_cb.mac_security_material.current.aKeyId,
+                                        sizeof(radio_cb.mac_security_material.current.aKeyId));
+}
+
+/**
+ * This method sets the current MAC frame counter value.
+ *
+ * This function is used when radio provides `OT_RADIO_CAPS_TRANSMIT_SEC` capability.
+ *
+ * @param[in]   aInstance         A pointer to an OpenThread instance.
+ * @param[in]   aMacFrameCounter  The MAC frame counter value.
+ *
+ */
+void otPlatRadioSetMacFrameCounter(otInstance *aInstance, uint32_t aMacFrameCounter)
+{
+    OT_UNUSED_VARIABLE(aInstance);
+
+    RADIO_TRACE("%s (%lu)\n", __FUNCTION__, aMacFrameCounter);
+
+    radio_i15dot4_mlme_set_req(I15DOT4_MAC_FRAME_COUNTER, sizeof(aMacFrameCounter), (uint8_t *)&aMacFrameCounter);
+}
 
 otRadioCaps otPlatRadioGetCaps(otInstance *aInstance)
 {
@@ -345,7 +521,8 @@ void otPlatRadioSetExtendedAddress(otInstance *aInstance, const otExtAddress *aA
 {
     OT_UNUSED_VARIABLE(aInstance);
 
-    RADIO_TRACE("%s\n", __FUNCTION__);
+    RADIO_TRACE("%s ", __FUNCTION__);
+    radio_utils_data_display_xtAddress(aAddress);
 
     radio_i15dot4_mlme_set_req(I15DOT4_MAC_EXTENDED_ADDRESS, sizeof(otExtAddress), (uint8_t *)aAddress);
 }
@@ -742,87 +919,19 @@ otRadioFrame *otPlatRadioGetTransmitBuffer(otInstance *aInstance)
 
 otError otPlatRadioTransmit(otInstance *aInstance, otRadioFrame *aFrame)
 {
-    uint8_t       msdu_handle;
-    slist_node_t *p_new_entry;
-
-    RADIO_TRACE("%s (%d, %d => %d)\n", __FUNCTION__, radio_cb.radio_state.current, radio_cb.radio_state.channel,
-                aFrame->mChannel);
-
-    /* Check radio state. */
-    if (radio_cb.scan.scanning)
+#if RADIO_SCHEDULED_TX_ENABLED
+    /* Check if the tx frame belongs to the scheduled tx. */
+    if ((aFrame->mInfo.mTxInfo.mTxDelayBaseTime != 0) || (aFrame->mInfo.mTxInfo.mTxDelay != 0))
     {
-        return OT_ERROR_INVALID_STATE;
+        return radio_transmit_scheduled_tx(aInstance, aFrame);
     }
-
-    switch (radio_cb.radio_state.current)
+    else
     {
-    case OT_RADIO_STATE_SLEEP:
-        if (!(RADIO_CAPABILITY & OT_RADIO_CAPS_SLEEP_TO_TX))
-        {
-            return OT_ERROR_INVALID_STATE;
-        }
-        break;
-
-    case OT_RADIO_STATE_RECEIVE:
-    case OT_RADIO_STATE_TRANSMIT:
-        break;
-
-    case OT_RADIO_STATE_DISABLED:
-    case OT_RADIO_STATE_INVALID:
-    default:
-        return OT_ERROR_INVALID_STATE;
+        return radio_transmit_normal(aInstance, aFrame);
     }
-
-    /* Check current channel. */
-    if (radio_cb.radio_state.channel != aFrame->mChannel)
-    {
-        /* Set channel to target channel. */
-        if (!radio_i15dot4_mlme_set_req(I15DOT4_PHY_CURRENT_CHANNEL, sizeof(aFrame->mChannel),
-                                        (uint8_t *)&aFrame->mChannel))
-        {
-            return OT_ERROR_FAILED;
-        }
-
-        /* Check status. */
-        if (radio_cb.i15dot4_set_conf.status != I15DOT4_STATUS_SUCCESS)
-        {
-            return OT_ERROR_FAILED;
-        }
-
-        /* Save information. */
-        radio_cb.radio_state.channel = aFrame->mChannel;
-    }
-
-    /* Get the msdu handle. */
-    if (!radio_i15dot4_mcps_data_req_msdu_handle_get(&msdu_handle))
-    {
-        return OT_ERROR_FAILED;
-    }
-
-    /* Add a MCPS-DATA.req wait confirm entry. */
-    p_new_entry = radio_i15dot4_mcps_data_req_wait_conf_add(msdu_handle, aInstance, aFrame);
-
-    /* Transmit mpdu to i15dot4 module. */
-    if (!radio_i15dot4_thread_data_req(aFrame, msdu_handle))
-    {
-        radio_i15dot4_mcps_data_req_wait_conf_remove(p_new_entry, WICED_TRUE);
-
-        return OT_ERROR_FAILED;
-    }
-
-    /* Set state. */
-    radio_cb.radio_state.current = OT_RADIO_STATE_TRANSMIT;
-
-    /* Notify OpenThread stack. */
-    otPlatRadioTxStarted(aInstance, aFrame);
-
-#if PACKET_STATISTICS
-
-    radio_cb.statistics.tx.num++;
-
-#endif // PACKET_STATISTICS
-
-    return OT_ERROR_NONE;
+#else  // !RADIO_SCHEDULED_TX_ENABLED
+    return radio_transmit_normal(aInstance, aFrame);
+#endif // RADIO_SCHEDULED_TX_ENABLED
 }
 
 int8_t otPlatRadioGetRssi(otInstance *aInstance)
@@ -896,7 +1005,7 @@ void otPlatRadioEnableSrcMatch(otInstance *aInstance, bool aEnable)
 
     RADIO_TRACE("%s (%d)\n", __FUNCTION__, aEnable);
 
-    radio_i15dot4_thread_addr_match_req(aEnable ? ADDR_MATCH_ENABLE : ADDR_MATCH_DISABLE, NULL);
+    radio_i15dot4_thread_addr_match_req(aEnable ? ADDR_MATCH_ENABLE : ADDR_MATCH_DISABLE, 0, NULL, NULL, 0);
 }
 
 otError otPlatRadioAddSrcMatchShortEntry(otInstance *aInstance, uint16_t aShortAddress)
@@ -909,7 +1018,7 @@ otError otPlatRadioAddSrcMatchShortEntry(otInstance *aInstance, uint16_t aShortA
 
     addr.short_addr = aShortAddress;
 
-    if (!radio_i15dot4_thread_addr_match_req(ADDR_MATCH_SHORT_ADD, &addr))
+    if (!radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ADD, I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING, &addr, NULL, 0))
     {
         return OT_ERROR_FAILED;
     }
@@ -938,23 +1047,15 @@ otError otPlatRadioAddSrcMatchExtEntry(otInstance *aInstance, const otExtAddress
     I15DOT4_ADDR_t addr = {0};
 
     RADIO_TRACE("%s\n", __FUNCTION__);
-
-#if RADIO_DEBUG
-    {
-        uint8_t i;
-
-        RADIO_TRACE("aExtAddress: 0x");
-        for (i = 0; i < OT_EXT_ADDRESS_SIZE; i++)
-        {
-            printf("%02X", aExtAddress->m8[i]);
-        }
-        RADIO_TRACE("\n");
-    }
-#endif
+    RADIO_TRACE("aExtAddress: 0x");
+    radio_utils_data_display_xtAddress(aExtAddress);
+    RADIO_TRACE("\n");
 
     memcpy((void *)&addr.ext_addr, (void *)aExtAddress, sizeof(otExtAddress));
 
-    if (!radio_i15dot4_thread_addr_match_req(ADDR_MATCH_EXT_ADD, &addr))
+    if (!radio_i15dot4_thread_addr_match_req(
+            ADDR_MATCH_ADD, I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING | I15DOT4_ADDR_MATCH_FLAG_EXT_ADDR_MODE, &addr, NULL,
+            0))
     {
         return OT_ERROR_FAILED;
     }
@@ -986,7 +1087,7 @@ otError otPlatRadioClearSrcMatchShortEntry(otInstance *aInstance, uint16_t aShor
 
     addr.short_addr = aShortAddress;
 
-    if (!radio_i15dot4_thread_addr_match_req(ADDR_MATCH_SHORT_CLEAR, &addr))
+    if (!radio_i15dot4_thread_addr_match_req(ADDR_MATCH_CLEAR, I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING, &addr, NULL, 0))
     {
         return OT_ERROR_FAILED;
     }
@@ -1018,7 +1119,9 @@ otError otPlatRadioClearSrcMatchExtEntry(otInstance *aInstance, const otExtAddre
 
     RADIO_TRACE("%s (0x%" PRIx64 ")\n", __FUNCTION__, addr.ext_addr);
 
-    if (!radio_i15dot4_thread_addr_match_req(ADDR_MATCH_EXT_CLEAR, &addr))
+    if (!radio_i15dot4_thread_addr_match_req(
+            ADDR_MATCH_CLEAR, I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING | I15DOT4_ADDR_MATCH_FLAG_EXT_ADDR_MODE, &addr,
+            NULL, 0))
     {
         return OT_ERROR_FAILED;
     }
@@ -1046,7 +1149,7 @@ void otPlatRadioClearSrcMatchShortEntries(otInstance *aInstance)
 
     RADIO_TRACE("%s\n", __FUNCTION__);
 
-    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_SHORT_CLEAR_ALL, NULL);
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_CLEAR_ALL, I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING, NULL, NULL, 0);
 }
 
 void otPlatRadioClearSrcMatchExtEntries(otInstance *aInstance)
@@ -1055,7 +1158,9 @@ void otPlatRadioClearSrcMatchExtEntries(otInstance *aInstance)
 
     RADIO_TRACE("%s\n", __FUNCTION__);
 
-    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_EXT_CLEAR_ALL, NULL);
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_CLEAR_ALL,
+                                        I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING | I15DOT4_ADDR_MATCH_FLAG_EXT_ADDR_MODE,
+                                        NULL, NULL, 0);
 }
 
 void otPlatRadioInit(void)
@@ -1105,6 +1210,34 @@ void otPlatRadioInit(void)
     /* Initialize the received frame list. */
     INIT_SLIST_NODE(&radio_cb.data.rx.frame_list);
 
+#if (RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER)
+
+    /* Create the mutex used for scheduled tx queue. */
+    radio_cb.csl_tx.p_mutex = wiced_rtos_create_mutex();
+
+    if (radio_cb.csl_tx.p_mutex == NULL)
+    {
+        RADIO_TRACE("%s: Fail to create csl tx mutex.\n", __FUNCTION__);
+        return;
+    }
+
+    /* Initialize the mutex used for scheduled tx queue.. */
+    if (wiced_rtos_init_mutex(radio_cb.csl_tx.p_mutex) != WICED_SUCCESS)
+    {
+        RADIO_TRACE("%s: Fail to init. csl tx mutex.\n", __FUNCTION__);
+        return;
+    }
+
+    /* Get/Register the application thread event code for scheduled tx.. */
+    if (!wiced_platform_application_thread_event_register(&radio_cb.csl_tx.event_code,
+                                                          radio_csl_tx_queue_timeout_handler))
+    {
+        RADIO_TRACE("%s: Fail to get event code for schedlued tx.\n", __FUNCTION__);
+        return;
+    }
+
+#endif // RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+
     /* Load the IEEE EUI64 address. */
     radio_ieee_eui64_load();
 
@@ -1119,7 +1252,359 @@ void otPlatRadioInit(void)
     radio_cb.initialized = true;
 }
 
+#if OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
+otError otPlatRadioConfigureEnhAckProbing(otInstance *         aInstance,
+                                          otLinkMetrics        aLinkMetrics,
+                                          const otShortAddress aShortAddress,
+                                          const otExtAddress * aExtAddress)
+{
+    otError error = OT_ERROR_NONE;
+
+    RADIO_TRACE("%s (%d, %d, %d, %d, 0x%04X, ", __FUNCTION__, aLinkMetrics.mPduCount, aLinkMetrics.mLqi,
+                aLinkMetrics.mLinkMargin, aLinkMetrics.mRssi, aShortAddress);
+    radio_utils_data_display_xtAddress(aExtAddress);
+    RADIO_TRACE(")\n");
+
+    OT_UNUSED_VARIABLE(aInstance);
+
+    error = otLinkMetricsConfigureEnhAckProbing(aShortAddress, aExtAddress, aLinkMetrics);
+    otEXPECT(error == OT_ERROR_NONE);
+    radio_enhanced_ack_content_set(aShortAddress, aExtAddress);
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
+
 //---------------------------- Static Function ----------------------------------------------------
+
+#if RADIO_LINK_COST_MAPPING
+
+static uint8_t radio_utils_rssi_to_lqi_mapping(int8_t rssi)
+{
+    uint8_t i;
+    int8_t  base_value;
+
+    for (i = 0; i < RADIO_LQI_STEPS - 1; i++)
+    {
+        base_value = RADIO_RSSI_VALUE_GOOD;
+        base_value -= (RADIO_LQI_STEP * i);
+
+        if (rssi >= base_value)
+        {
+            break;
+        }
+    }
+
+    return i + 1;
+}
+
+#endif // RADIO_LINK_COST_MAPPING
+
+#if OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
+
+static void radio_enhanced_ack_content_set(const otShortAddress aShortAddress, const otExtAddress *aExtAddress)
+{
+    int8_t         offset = 0;
+    uint8_t        ackIeData[OT_ACK_IE_MAX_SIZE];
+    uint8_t        enhAckProbingDataLen = 0;
+    otMacAddress   macAddress;
+    I15DOT4_ADDR_t addr = {0};
+
+    macAddress.mType                  = OT_MAC_ADDRESS_TYPE_SHORT;
+    macAddress.mAddress.mShortAddress = aShortAddress;
+
+    if ((enhAckProbingDataLen = otLinkMetricsEnhAckGetDataLen(&macAddress)) > 0)
+    {
+        offset += otMacFrameGenerateEnhAckProbingIe(ackIeData + offset, NULL, enhAckProbingDataLen);
+    }
+
+    RADIO_TRACE("Enh Ack IE ");
+    radio_utils_data_display(offset, ackIeData);
+
+    addr.short_addr = aShortAddress;
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ADD, I15DOT4_ADDR_MATCH_FLAG_VENDOR_IE, &addr, ackIeData, offset);
+
+    memcpy((void *)&addr.ext_addr, (void *)aExtAddress, sizeof(otExtAddress));
+    radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ADD,
+                                        I15DOT4_ADDR_MATCH_FLAG_VENDOR_IE | I15DOT4_ADDR_MATCH_FLAG_EXT_ADDR_MODE,
+                                        &addr, ackIeData, offset);
+}
+
+#endif // OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
+
+#if RADIO_SCHEDULED_TX_ENABLED
+/*
+ * Handle the transmit request with scheduled transmission.
+ */
+static otError radio_transmit_scheduled_tx(otInstance *aInstance, otRadioFrame *aFrame)
+{
+#if RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+
+    uint32_t      current_time_us;
+    uint32_t      time_consumed_us;
+    uint32_t      time_consumed_ms;
+    uint32_t      tx_delay_ms;
+    slist_node_t *p_node;
+    uint32_t      target_timeout_ms;
+
+    /* Check state. */
+    if (!radio_cb.initialized)
+    {
+        return OT_ERROR_INVALID_STATE;
+    }
+
+    /* Check Parameters. */
+    if (!aInstance || !aFrame)
+    {
+        return OT_ERROR_INVALID_ARGS;
+    }
+
+    current_time_us  = (uint32_t)otPlatRadioGetNow(aInstance);
+    time_consumed_us = current_time_us - aFrame->mInfo.mTxInfo.mTxDelayBaseTime;
+
+    RADIO_TRACE("%s (mTxDelayBaseTime: %ld, mTxDelay: %ld, current_time_us: %ld)\n", __FUNCTION__,
+                aFrame->mInfo.mTxInfo.mTxDelayBaseTime, aFrame->mInfo.mTxInfo.mTxDelay, current_time_us);
+
+    /* Check if current time precedes the expected time. */
+    if (time_consumed_us >= aFrame->mInfo.mTxInfo.mTxDelay)
+    {
+        return radio_transmit_normal(aInstance, aFrame);
+    }
+
+    wiced_rtos_lock_mutex(radio_cb.csl_tx.p_mutex);
+
+    /* Add the request to the scheduled tx waiting queue and store information. */
+    p_node = radio_csl_tx_waiting_queue_add(aInstance, aFrame);
+
+    if (!p_node)
+    {
+        RADIO_TRACE("Err: cannot add an scheduled waiting tx entry.\n");
+        wiced_rtos_unlock_mutex(radio_cb.csl_tx.p_mutex);
+
+        return OT_ERROR_NO_BUFS;
+    }
+
+    /* Initialize the timer. */
+    wiced_init_timer(&(((radio_csl_tx_element_t *)p_node)->timer), radio_csl_tx_waiting_queue_timeout_callback,
+                     (WICED_TIMER_PARAM_TYPE)p_node, WICED_MILLI_SECONDS_TIMER);
+
+    /* Calculate target timeout. */
+    time_consumed_ms = time_consumed_us / 1000;
+    tx_delay_ms      = aFrame->mInfo.mTxInfo.mTxDelay / 1000;
+    if (aFrame->mInfo.mTxInfo.mTxDelay % 1000)
+    {
+        tx_delay_ms++;
+    }
+
+    target_timeout_ms = tx_delay_ms - time_consumed_ms;
+
+    /* Start timer. */
+    wiced_start_timer(&(((radio_csl_tx_element_t *)p_node)->timer), target_timeout_ms);
+
+    wiced_rtos_unlock_mutex(radio_cb.csl_tx.p_mutex);
+
+    return OT_ERROR_NONE;
+
+#else // !RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+
+    return radio_transmit_normal(aInstance, aFrame);
+
+#endif // RADIO_SCHEDULED_TX_SOFTWARE_TIMER
+}
+
+#endif // RADIO_SCHEDULED_TX_ENABLED
+
+/*
+ * Handle the transmit request in normal case.
+ */
+static otError radio_transmit_normal(otInstance *aInstance, otRadioFrame *aFrame)
+{
+    uint8_t       msdu_handle;
+    slist_node_t *p_new_entry;
+
+    RADIO_TRACE("%s (%d, %d => %d)\n", __FUNCTION__, radio_cb.radio_state.current, radio_cb.radio_state.channel,
+                aFrame->mChannel);
+
+    /* Check radio state. */
+    if (radio_cb.scan.scanning)
+    {
+        return OT_ERROR_INVALID_STATE;
+    }
+
+    switch (radio_cb.radio_state.current)
+    {
+    case OT_RADIO_STATE_SLEEP:
+        if (!(RADIO_CAPABILITY & OT_RADIO_CAPS_SLEEP_TO_TX))
+        {
+            return OT_ERROR_INVALID_STATE;
+        }
+        break;
+
+    case OT_RADIO_STATE_RECEIVE:
+    case OT_RADIO_STATE_TRANSMIT:
+        break;
+
+    case OT_RADIO_STATE_DISABLED:
+    case OT_RADIO_STATE_INVALID:
+    default:
+        return OT_ERROR_INVALID_STATE;
+    }
+    /* Check current channel. */
+    if (radio_cb.radio_state.channel != aFrame->mChannel)
+    {
+        /* Set channel to target channel. */
+        if (!radio_i15dot4_mlme_set_req(I15DOT4_PHY_CURRENT_CHANNEL, sizeof(aFrame->mChannel),
+                                        (uint8_t *)&aFrame->mChannel))
+        {
+            return OT_ERROR_FAILED;
+        }
+
+        /* Check status. */
+        if (radio_cb.i15dot4_set_conf.status != I15DOT4_STATUS_SUCCESS)
+        {
+            return OT_ERROR_FAILED;
+        }
+
+        /* Save information. */
+        radio_cb.radio_state.channel = aFrame->mChannel;
+    }
+
+    /* Get the msdu handle. */
+    if (!radio_i15dot4_mcps_data_req_msdu_handle_get(&msdu_handle))
+    {
+        return OT_ERROR_FAILED;
+    }
+
+    /* Add a MCPS-DATA.req wait confirm entry. */
+    p_new_entry = radio_i15dot4_mcps_data_req_wait_conf_add(msdu_handle, aInstance, aFrame);
+
+    /* Transmit mpdu to i15dot4 module. */
+    if (!radio_i15dot4_thread_data_req(aFrame, msdu_handle))
+    {
+        radio_i15dot4_mcps_data_req_wait_conf_remove(p_new_entry, WICED_TRUE);
+
+        return OT_ERROR_FAILED;
+    }
+
+    /* Set state. */
+    radio_cb.radio_state.current = OT_RADIO_STATE_TRANSMIT;
+
+    /* Notify OpenThread stack. */
+    otPlatRadioTxStarted(aInstance, aFrame);
+
+#if PACKET_STATISTICS
+
+    radio_cb.statistics.tx.num++;
+
+#endif // PACKET_STATISTICS
+
+    return OT_ERROR_NONE;
+}
+
+#if (RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER)
+
+/*
+ * Add element to the scheduled tx waiting queue.
+ */
+static slist_node_t *radio_csl_tx_waiting_queue_add(otInstance *aInstance, otRadioFrame *aTxFrame)
+{
+    slist_node_t *p_node;
+
+    /* Allocate memory */
+    p_node = (slist_node_t *)wiced_platform_memory_allocate(sizeof(radio_csl_tx_element_t));
+
+    if (!p_node)
+    {
+        return NULL;
+    }
+
+    memset((void *)p_node, 0, sizeof(radio_csl_tx_element_t));
+
+    /* Add to the tail of scheduled tx waiting queue. */
+    slist_add_tail(p_node, &radio_cb.csl_tx.waiting_queue);
+
+    /* Store information. */
+    ((radio_csl_tx_element_t *)p_node)->aInstance = aInstance;
+    ((radio_csl_tx_element_t *)p_node)->aTxFrame  = aTxFrame;
+
+    return p_node;
+}
+
+/*
+ * Timeout callback for Scheduled Tx. timer. This callback is called in the MPAF thread.
+ */
+static void radio_csl_tx_waiting_queue_timeout_callback(WICED_TIMER_PARAM_TYPE cb_params)
+{
+    slist_node_t *p_node;
+    int           i;
+
+    wiced_rtos_lock_mutex(radio_cb.csl_tx.p_mutex);
+
+    /* Check if the target entry exists in the scheduled tx waiting queue. */
+    for (i = 0; i < slist_count(&radio_cb.csl_tx.waiting_queue); i++)
+    {
+        /* Get the first entry in the scheduled tx waiting queue. */
+        p_node = slist_get(&radio_cb.csl_tx.waiting_queue);
+
+        if (p_node == (slist_node_t *)cb_params)
+        {
+            /* Move this entry to the scheduled tx fired queue. */
+            slist_add_tail(p_node, &radio_cb.csl_tx.fired_queue);
+
+            /* Set an application thread event for this fired scheduled tx entry. */
+            wiced_platform_application_thread_event_set(radio_cb.csl_tx.event_code);
+
+            break;
+        }
+        else
+        {
+            /* Put back to the scheduled tx waiting queue. */
+            slist_add_tail(p_node, &radio_cb.csl_tx.waiting_queue);
+        }
+    }
+
+    wiced_rtos_unlock_mutex(radio_cb.csl_tx.p_mutex);
+}
+
+static void radio_csl_tx_queue_timeout_handler(void)
+{
+    slist_node_t *p_node;
+    otInstance *  aInstance;
+    otRadioFrame *aTxFrame;
+
+    RADIO_TRACE("%s\n", __FUNCTION__);
+
+    wiced_rtos_lock_mutex(radio_cb.csl_tx.p_mutex);
+
+    /* Check the scheduled tx fired queue.*/
+    if (slist_count(&radio_cb.csl_tx.fired_queue) <= 0)
+    {
+        wiced_rtos_unlock_mutex(radio_cb.csl_tx.p_mutex);
+
+        return;
+    }
+
+    /* Get the first entry from the fired queue. */
+    p_node = slist_get(&radio_cb.csl_tx.fired_queue);
+
+    aInstance = ((radio_csl_tx_element_t *)p_node)->aInstance;
+    aTxFrame  = ((radio_csl_tx_element_t *)p_node)->aTxFrame;
+
+    wiced_platform_memory_free((void *)p_node);
+
+    wiced_rtos_unlock_mutex(radio_cb.csl_tx.p_mutex);
+
+    radio_transmit_normal(aInstance, aTxFrame);
+
+    /* Set an application thread event if the fired queue is not empty. */
+    if (slist_count(&radio_cb.csl_tx.fired_queue) > 0)
+    {
+        wiced_platform_application_thread_event_set(radio_cb.csl_tx.event_code);
+    }
+}
+
+#endif // RADIO_SCHEDULED_TX_ENABLED && RADIO_SCHEDULED_TX_SOFTWARE_TIMER
 
 /*
  * Helper function to get the assigned application thread event code for target
@@ -1410,9 +1895,31 @@ static wiced_bool_t radio_i15dot4_mcps_data_req_msdu_handle_get(uint8_t *p_msdu_
 
 static wiced_bool_t radio_i15dot4_thread_data_req(otRadioFrame *aFrame, uint8_t msdu_handle)
 {
-    I15DOT4_THREAD_DATA_REQ_t thread_data_req = {0};
+    I15DOT4_THREAD_DATA_REQ_t thread_data_req     = {0};
+    uint8_t                   encryption_required = 0;
+    uint8_t                   security_header_idx = 0;
+    uint8_t                   security_header_len = 0;
+    uint8_t                   payload_index       = 0;
+    uint16_t                  payload_len         = 0;
+    uint8_t                   mic_len             = 0;
 
-    RADIO_TRACE("%s (%d)\n", __FUNCTION__, msdu_handle);
+    if (RADIO_CAPABILITY & OT_RADIO_CAPS_TRANSMIT_SEC)
+    {
+        /* Check if the outgoing frame shall be encrypted in MAC layer. */
+        encryption_required = otMacFrameIsSecurityEnabled(aFrame);
+
+        /* Find the security header index. */
+        if (encryption_required)
+        {
+            security_header_idx = radio_wrapper_mac_frame_security_header_idx_get(aFrame);
+            security_header_len = radio_wrapper_mac_frame_security_header_length_get(aFrame);
+            payload_index       = radio_wrapper_mac_frame_payload_index_get(aFrame);
+            payload_len         = radio_wrapper_mac_frame_payload_length_get(aFrame);
+        }
+    }
+
+    RADIO_TRACE("%s (%u, %u, %u, %u, %u, %u)\n", __FUNCTION__, msdu_handle, encryption_required, security_header_len,
+                security_header_idx, payload_index, payload_len);
     radio_utils_radio_frame_display(aFrame, WICED_TRUE);
 
     /* Check frame length. */
@@ -1424,12 +1931,45 @@ static wiced_bool_t radio_i15dot4_thread_data_req(otRadioFrame *aFrame, uint8_t 
     thread_data_req.context_id = CONTEXT_ID_ZBPRO;
     thread_data_req.cmd_id     = I15DOT4_CMDID_THREAD_DATA_REQ;
     thread_data_req.handle     = msdu_handle;
-    memcpy((void *)&thread_data_req.key[0], (void *)aFrame->mInfo.mTxInfo.mAesKey, OT_MAC_KEY_SIZE);
-    thread_data_req.max_csma_backoffs     = aFrame->mInfo.mTxInfo.mMaxCsmaBackoffs;
-    thread_data_req.max_frame_retries     = aFrame->mInfo.mTxInfo.mMaxFrameRetries;
-    thread_data_req.csma_ca_enabled       = aFrame->mInfo.mTxInfo.mCsmaCaEnabled;
-    thread_data_req.is_security_processed = aFrame->mInfo.mTxInfo.mIsSecurityProcessed;
-    thread_data_req.psdu_length           = aFrame->mLength - I15DOT4_FCS_LENGTH;
+    if (aFrame->mInfo.mTxInfo.mAesKey)
+    {
+        memcpy((void *)&thread_data_req.key[0], (void *)aFrame->mInfo.mTxInfo.mAesKey, OT_MAC_KEY_SIZE);
+    }
+    else
+    {
+        if (radio_cb.mac_security_material.current.aKeyType == OT_KEY_TYPE_LITERAL_KEY)
+        {
+            memcpy((void *)&thread_data_req.key[0],
+                   (void *)radio_cb.mac_security_material.current.aKey.mKeyMaterial.mKey.m8, OT_MAC_KEY_SIZE);
+        }
+        else
+        {
+            memcpy((void *)&thread_data_req.key[0],
+                   (void *)radio_cb.mac_security_material.current.aKey.mKeyMaterial.mKeyRef, sizeof(otCryptoKeyRef));
+        }
+    }
+    thread_data_req.tx_delay           = aFrame->mInfo.mTxInfo.mTxDelay;
+    thread_data_req.tx_delay_base_time = aFrame->mInfo.mTxInfo.mTxDelayBaseTime;
+    thread_data_req.max_csma_backoffs  = aFrame->mInfo.mTxInfo.mMaxCsmaBackoffs;
+    thread_data_req.max_frame_retries  = aFrame->mInfo.mTxInfo.mMaxFrameRetries;
+    thread_data_req.csma_ca_enabled    = aFrame->mInfo.mTxInfo.mCsmaCaEnabled;
+    thread_data_req.csl_present        = aFrame->mInfo.mTxInfo.mCslPresent;
+    thread_data_req.security_enable    = encryption_required;
+    thread_data_req.key_id_mode        = radio_wrapper_mac_frame_key_id_mode_get(aFrame);
+    thread_data_req.key_index          = otMacFrameGetKeyId(aFrame);
+    thread_data_req.sec_hdr_offset     = security_header_idx;
+    thread_data_req.sec_hdr_len        = security_header_len;
+    thread_data_req.payload_offset     = payload_index;
+    thread_data_req.payload_len        = payload_len;
+    if (encryption_required)
+    {
+        mic_len                     = aFrame->mLength - I15DOT4_FCS_LENGTH - payload_index - payload_len;
+        thread_data_req.psdu_length = aFrame->mLength - I15DOT4_FCS_LENGTH - mic_len;
+    }
+    else
+    {
+        thread_data_req.psdu_length = aFrame->mLength - I15DOT4_FCS_LENGTH;
+    }
     memcpy((void *)&thread_data_req.psdu[0], (void *)aFrame->mPsdu, thread_data_req.psdu_length);
 
     radio_hci_vsc_command_send(HCI_VSC_I15DOT4_META_OPCODE,
@@ -1442,7 +1982,11 @@ static wiced_bool_t radio_i15dot4_thread_data_req(otRadioFrame *aFrame, uint8_t 
 /*
  * Issue a THREAD-ADDR_MATCH.req primitive to i15dot4 module.
  */
-static wiced_bool_t radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t action, I15DOT4_ADDR_t *p_addr)
+static wiced_bool_t radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t action,
+                                                        uint8_t             flag,
+                                                        I15DOT4_ADDR_t *    p_addr,
+                                                        uint8_t *           p_data,
+                                                        uint8_t             data_len)
 {
     I15DOT4_THREAD_ADDR_MATCH_REQ_t thread_addr_match_req = {0};
 
@@ -1455,6 +1999,9 @@ static wiced_bool_t radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t acti
     {
         memcpy((void *)&thread_addr_match_req.addr, (void *)p_addr, sizeof(I15DOT4_ADDR_t));
     }
+    thread_addr_match_req.flag    = flag;
+    thread_addr_match_req.buf_len = data_len;
+    memcpy((void *)thread_addr_match_req.buf, (void *)p_data, data_len);
 
     radio_hci_vsc_command_send(HCI_VSC_I15DOT4_META_OPCODE, sizeof(thread_addr_match_req),
                                (uint8_t *)&thread_addr_match_req);
@@ -1684,11 +2231,21 @@ static void radio_hci_vse_callback_thread_data_ind(uint8_t len, uint8_t *p)
 
     /* Fill in information. */
     memcpy((void *)p_psdu, (void *)p_thread_data_ind->psdu, p_thread_data_ind->psdu_length);
-    p_rx_frame->rxFrame.mPsdu                                = p_psdu;
-    p_rx_frame->rxFrame.mLength                              = p_thread_data_ind->psdu_length + I15DOT4_FCS_LENGTH;
-    p_rx_frame->rxFrame.mChannel                             = radio_cb.radio_state.channel;
-    p_rx_frame->rxFrame.mInfo.mRxInfo.mTimestamp             = (uint64_t)p_thread_data_ind->symbol_counter;
-    p_rx_frame->rxFrame.mInfo.mRxInfo.mRssi                  = (int8_t)p_thread_data_ind->rssi;
+    p_rx_frame->rxFrame.mPsdu    = p_psdu;
+    p_rx_frame->rxFrame.mLength  = p_thread_data_ind->psdu_length + I15DOT4_FCS_LENGTH;
+    p_rx_frame->rxFrame.mChannel = radio_cb.radio_state.channel;
+#if RADIO_CLOCK_USE_1M_TIMER
+    p_rx_frame->rxFrame.mInfo.mRxInfo.mTimestamp = clock_SystemTimeMicroseconds64();
+#else  // !RADIO_CLOCK_USE_1M_TIMER
+    p_rx_frame->rxFrame.mInfo.mRxInfo.mTimestamp = ((uint64_t)(p_thread_data_ind->symbol_counter))
+                                                   << 4; /* 1 symnbol = 16 us */
+#endif // RADIO_CLOCK_USE_1M_TIMER
+    p_rx_frame->rxFrame.mInfo.mRxInfo.mRssi = (int8_t)p_thread_data_ind->rssi;
+#if RADIO_LINK_COST_MAPPING
+    p_rx_frame->rxFrame.mInfo.mRxInfo.mLqi = radio_utils_rssi_to_lqi_mapping(p_rx_frame->rxFrame.mInfo.mRxInfo.mRssi);
+#else  // !RADIO_LINK_COST_MAPPING
+    p_rx_frame->rxFrame.mInfo.mRxInfo.mLqi = 1;
+#endif // RADIO_LINK_COST_MAPPING
     p_rx_frame->rxFrame.mInfo.mRxInfo.mAckedWithFramePending = p_thread_data_ind->ack_frame_pending;
 
     /* Add this entry to the receive frame list. */
@@ -1707,7 +2264,9 @@ static void radio_hci_vse_callback_thread_data_conf(uint8_t len, uint8_t *p)
     I15DOT4_THREAD_DATA_CONF_t *p_thread_data_conf;
     int                         i;
     slist_node_t *              p_node;
-    I15DOT4_FRAME_CTRL_t *      p_frame_ctrl;
+#if !I15DOT4_VARAIABLE_ACK_LENGTH
+    I15DOT4_FRAME_CTRL_t *p_frame_ctrl;
+#endif // !I15DOT4_VARAIABLE_ACK_LENGTH
 
     /* Check data length. */
     if (len != sizeof(I15DOT4_THREAD_DATA_CONF_t))
@@ -1720,9 +2279,24 @@ static void radio_hci_vse_callback_thread_data_conf(uint8_t len, uint8_t *p)
     RADIO_TRACE("%s (%d, 0x%02X)\n", __FUNCTION__, p_thread_data_conf->handle, p_thread_data_conf->status);
 
 #if (RADIO_DEBUG)
-    RADIO_TRACE("ACK Frame: ");
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    RADIO_TRACE("ACK Frame (%d): ", p_thread_data_conf->ack_frame_length);
+
+    for (i = 0; i < (I15DOT4_FCS_LENGTH + RADIO_I15DOT4_SEQ_NUM_LENGTH); i++)
+    {
+        RADIO_TRACE("0x%02x ", p_thread_data_conf->ack_frame[i]);
+    }
+    RADIO_TRACE("--- ");
+    for (i = (p_thread_data_conf->ack_frame_length - 2); i < (p_thread_data_conf->ack_frame_length); i++)
+    {
+        RADIO_TRACE("0x%02x ", p_thread_data_conf->ack_frame[i]);
+    }
+    RADIO_TRACE("\n");
+#else  // !I15DOT4_VARAIABLE_ACK_LENGTH
+    RADIO_TRACE("ACK Frame (%d): ", I15DOT4_ACK_LENGTH);
     for (i = 0; i < I15DOT4_ACK_LENGTH; i++) RADIO_TRACE("0x%02X ", p_thread_data_conf->ack_frame[i]);
     RADIO_TRACE("\n");
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
 #endif
 
     /* Check if the corresponding THREAD-DATA.req exists. */
@@ -1735,12 +2309,23 @@ static void radio_hci_vse_callback_thread_data_conf(uint8_t len, uint8_t *p)
             ((radio_data_wait_conf_entry_t *)p_node)->status = p_thread_data_conf->status;
 
             /* Keep Ack frame information if exists. */
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+            if (p_thread_data_conf->ack_frame_length)
+            {
+                ((radio_data_wait_conf_entry_t *)p_node)->ackFrame.length =
+                    p_thread_data_conf->ack_frame_length + I15DOT4_FCS_LENGTH;
+
+                memcpy((void *)((radio_data_wait_conf_entry_t *)p_node)->ackFrame.content,
+                       (void *)p_thread_data_conf->ack_frame, p_thread_data_conf->ack_frame_length);
+            }
+#else  // !I15DOT4_VARAIABLE_ACK_LENGTH
             p_frame_ctrl = (I15DOT4_FRAME_CTRL_t *)p_thread_data_conf->ack_frame;
             if (p_frame_ctrl->field.frame_type == I15DOT4_FRAME_TYPE_ACK)
             {
                 memcpy((void *)((radio_data_wait_conf_entry_t *)p_node)->ackFrame,
                        (void *)p_thread_data_conf->ack_frame, I15DOT4_ACK_LENGTH);
             }
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
 
             /* Move this entry to the data confirmed list. */
             slist_add_tail(p_node, &radio_cb.data.tx.confirmed_list);
@@ -1957,11 +2542,13 @@ static void radio_i15dot4_mlme_scan_conf_handler(void)
  */
 static void radio_i15dot4_thread_data_conf_handler(void)
 {
-    slist_node_t *        p_node;
-    otError               aError = OT_ERROR_CHANNEL_ACCESS_FAILURE;
+    slist_node_t *p_node;
+    otError       aError = OT_ERROR_CHANNEL_ACCESS_FAILURE;
+#if !I15DOT4_VARAIABLE_ACK_LENGTH
     I15DOT4_FRAME_CTRL_t *p_frame_ctrl;
     wiced_bool_t          ack_frame_included = WICED_FALSE;
-    otRadioFrame          ack_frame          = {0};
+#endif // !I15DOT4_VARAIABLE_ACK_LENGTH
+    otRadioFrame ack_frame = {0};
 
     RADIO_TRACE("%s\n", __FUNCTION__);
 
@@ -1980,6 +2567,17 @@ static void radio_i15dot4_thread_data_conf_handler(void)
     }
     else if (((radio_data_wait_conf_entry_t *)p_node)->status == I15DOT4_STATUS_NO_ACK)
     {
+        /* Check if MAC Tx. Security is enabled. */
+        if (RADIO_CAPABILITY & OT_RADIO_CAPS_TRANSMIT_SEC)
+        {
+            /* Check if the outgoing frame shall be encrypted. */
+            if (otMacFrameIsSecurityEnabled(((radio_data_wait_conf_entry_t *)p_node)->aTxFrame))
+            {
+                /* Set the header as updated. */
+                ((radio_data_wait_conf_entry_t *)p_node)->aTxFrame->mInfo.mTxInfo.mIsHeaderUpdated = true;
+            }
+        }
+
         aError = OT_ERROR_NO_ACK;
     }
 
@@ -1994,7 +2592,15 @@ static void radio_i15dot4_thread_data_conf_handler(void)
 
 #endif // PACKET_STATISTICS
 
-    /* Check if the ACK frame exist. */
+        /* Check if the ACK frame exist. */
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    if (((radio_data_wait_conf_entry_t *)p_node)->ackFrame.length)
+    {
+        ack_frame.mLength  = ((radio_data_wait_conf_entry_t *)p_node)->ackFrame.length;
+        ack_frame.mPsdu    = ((radio_data_wait_conf_entry_t *)p_node)->ackFrame.content;
+        ack_frame.mChannel = radio_cb.radio_state.channel;
+    }
+#else  // !I15DOT4_VARAIABLE_ACK_LENGTH
     p_frame_ctrl = (I15DOT4_FRAME_CTRL_t *)((radio_data_wait_conf_entry_t *)p_node)->ackFrame;
     if (p_frame_ctrl->field.frame_type == I15DOT4_FRAME_TYPE_ACK)
     {
@@ -2003,6 +2609,7 @@ static void radio_i15dot4_thread_data_conf_handler(void)
         ack_frame.mPsdu    = ((radio_data_wait_conf_entry_t *)p_node)->ackFrame;
         ack_frame.mChannel = radio_cb.radio_state.channel;
     }
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
 
 #if OPENTHREAD_CONFIG_DIAG_ENABLE
 
@@ -2014,9 +2621,15 @@ static void radio_i15dot4_thread_data_conf_handler(void)
     else
 #endif /* OPENTHREAD_CONFIG_DIAG_ENABLE */
     {
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+        otPlatRadioTxDone(((radio_data_wait_conf_entry_t *)p_node)->aInstance,
+                          ((radio_data_wait_conf_entry_t *)p_node)->aTxFrame,
+                          ((radio_data_wait_conf_entry_t *)p_node)->ackFrame.length ? &ack_frame : NULL, aError);
+#else  // !I15DOT4_VARAIABLE_ACK_LENGTH
         otPlatRadioTxDone(((radio_data_wait_conf_entry_t *)p_node)->aInstance,
                           ((radio_data_wait_conf_entry_t *)p_node)->aTxFrame, ack_frame_included ? &ack_frame : NULL,
                           aError);
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
     }
 
     /* Free memory. */
@@ -2054,6 +2667,8 @@ static void radio_i15dot4_thread_data_ind_handler(void)
     /* Get the first entry. */
     p_node = slist_get(&radio_cb.data.rx.frame_list);
 
+    radio_utils_radio_frame_display(&((radio_data_received_frame_t *)p_node)->rxFrame, WICED_FALSE);
+
     /* Inform thread stack for the received frame. */
     otPlatRadioReceiveDone(radio_cb.data.rx.aInstance, &((radio_data_received_frame_t *)p_node)->rxFrame,
                            OT_ERROR_NONE);
@@ -2084,6 +2699,51 @@ static void radio_utils_data_display(uint8_t data_len, uint8_t *p_data)
         printf("0x%02X, ", p_data[i]);
     }
     printf("\n");
+}
+
+static void radio_utils_data_display_uint64(uint64_t num)
+{
+    char    outStr[21] = {'\0'};
+    char    tmp[21]    = {'\0'};
+    uint8_t remainder;
+    uint8_t i = 0;
+    uint8_t j = 0;
+
+    while (1)
+    {
+        // quotient    = num / 10;
+        remainder = num % 10;
+        num       = num / 10;
+
+        tmp[i] = 0x30 + remainder;
+        i++;
+
+        if (num == 0)
+            break;
+    }
+
+    while (1)
+    {
+        outStr[j] = tmp[i - 1];
+        j++;
+        i--;
+
+        if (i == 0)
+            break;
+    }
+
+    printf("%s", &outStr[0]);
+}
+
+static void radio_utils_data_display_xtAddress(const otExtAddress *aExtAddress)
+{
+    uint8_t i;
+
+    printf("0x");
+    for (i = 0; i < OT_EXT_ADDRESS_SIZE; i++)
+    {
+        printf("%02X", aExtAddress->m8[i]);
+    }
 }
 
 static void radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t tx)
@@ -2122,7 +2782,7 @@ static void radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t 
             printf("AES Key: ");
             for (i = 0; i < OT_MAC_KEY_SIZE; i++)
             {
-                printf("0x%02x ", p_frame->mInfo.mTxInfo.mAesKey->m8[i]);
+                printf("0x%02x ", p_frame->mInfo.mTxInfo.mAesKey->mKeyMaterial.mKey.m8[i]);
             }
             printf("\n");
         }
@@ -2134,22 +2794,21 @@ static void radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t 
                    p_frame->mInfo.mTxInfo.mIeInfo->mTimeSyncSeq);
         }
 
-#if 0  // OPENTHREAD_VERSION=master
         printf("TxDelay: %ld\n", p_frame->mInfo.mTxInfo.mTxDelay);
         printf("TxDelayBaseTime: %ld\n", p_frame->mInfo.mTxInfo.mTxDelayBaseTime);
-#endif // OPENTHREAD_VERSION
         printf("MaxCsmaBackoffs: %d\n", p_frame->mInfo.mTxInfo.mMaxCsmaBackoffs);
         printf("MaxFrameRetries: %d\n", p_frame->mInfo.mTxInfo.mMaxFrameRetries);
         printf("IsARetx: %d\n", p_frame->mInfo.mTxInfo.mIsARetx);
         printf("CsmaCaEnabled: %d\n", p_frame->mInfo.mTxInfo.mCsmaCaEnabled);
-#if 0  // OPENTHREAD_VERSION=master
         printf("CslPresent: %d\n", p_frame->mInfo.mTxInfo.mCslPresent);
-#endif // OPENTHREAD_VERSION
         printf("IsSecurityProcessed: %d\n", p_frame->mInfo.mTxInfo.mIsSecurityProcessed);
     }
     else
     {
-        printf("Timestamp: %" PRIu64 "\n", p_frame->mInfo.mRxInfo.mTimestamp);
+        printf("Timestamp: ");
+        radio_utils_data_display_uint64(p_frame->mInfo.mRxInfo.mTimestamp);
+        printf("\n");
+        // printf("Timestamp: %" PRIu64 "\n", p_frame->mInfo.mRxInfo.mTimestamp);
         printf("AckFrameCounter: %ld\n", p_frame->mInfo.mRxInfo.mAckFrameCounter);
         printf("AckKeyId: %d\n", p_frame->mInfo.mRxInfo.mAckKeyId);
         printf("Rssi: %d\n", p_frame->mInfo.mRxInfo.mRssi);
@@ -2182,6 +2841,16 @@ static void radio_utils_data_display(uint8_t data_len, uint8_t *p_data)
 {
     OT_UNUSED_VARIABLE(data_len);
     OT_UNUSED_VARIABLE(p_data);
+}
+
+static void radio_utils_data_display_uint64(uint64_t num)
+{
+    OT_UNUSED_VARIABLE(num);
+}
+
+static void radio_utils_data_display_xtAddress(const otExtAddress *aExtAddress)
+{
+    OT_UNUSED_VARIABLE(aExtAddress);
 }
 
 static void radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t tx)
@@ -2292,3 +2961,44 @@ static void radio_ieee_eui64_load(void)
 
 #endif // RADIO_IEEE_EUI64_STORING_METHOD == RADIO_IEEE_EUI64_STORING_METHOD_NVRAM
 }
+
+#if OPENTHREAD_CONFIG_MAC_CSL_TRANSMITTER_ENABLE
+
+extern uint16_t otPlatTimeGetXtalAccuracy(void);
+
+uint8_t otPlatRadioGetCslAccuracy(otInstance *aInstance)
+{
+    RADIO_TRACE("%s\n", __FUNCTION__);
+
+    OT_UNUSED_VARIABLE(aInstance);
+
+    return (uint8_t)otPlatTimeGetXtalAccuracy();
+}
+#if 0
+uint8_t otPlatRadioGetCslClockUncertainty(otInstance *aInstance)
+{
+    RADIO_TRACE("%s\n", __FUNCTION__);
+
+    OT_UNUSED_VARIABLE(aInstance);
+}
+#endif
+
+uint64_t otPlatRadioGetNow(otInstance *aInstance)
+{
+    uint64_t time = 0;
+
+    OT_UNUSED_VARIABLE(aInstance);
+
+#if RADIO_CLOCK_USE_1M_TIMER
+    time = clock_SystemTimeMicroseconds64();
+#else
+#endif
+
+    RADIO_TRACE("%s ", __FUNCTION__);
+    radio_utils_data_display_uint64(time);
+    RADIO_TRACE("\n");
+
+    return time;
+}
+
+#endif // OPENTHREAD_CONFIG_MAC_CSL_TRANSMITTER_ENABLE

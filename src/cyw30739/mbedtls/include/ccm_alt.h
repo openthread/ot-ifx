@@ -50,6 +50,7 @@ typedef struct mbedtls_ccm_context
 {
     uint8_t key[MBEDTLS_MAX_KEY_LENGTH];
     uint8_t key_len;
+    uint8_t decrypt_tag[16];
 } mbedtls_ccm_context;
 
 typedef enum
@@ -304,5 +305,15 @@ int mbedtls_ccm_star_auth_decrypt(mbedtls_ccm_context *ctx,
                                   unsigned char *      output,
                                   const unsigned char *tag,
                                   size_t               tag_len);
+
+/**
+ * \brief           In decrypt part, this function gets the tag calculated from input data
+ *
+ * \param ctx       The CCM context to use for decryption.
+ * \param tag       The buffer returns calculated tag value
+ * \param tag_len   The length of the authentication field in Bytes.
+ *                  0, 4, 6, 8, 10, 12, 14 or 16.
+ */
+void mbedtls_ccm_get_decrypt_tag(mbedtls_ccm_context *ctx, const unsigned char *tag, size_t tag_len);
 
 #endif /* MBEDTLS_CCM_ALT_H */

@@ -33,6 +33,8 @@ target_compile_definitions(
                                 MBEDTLS_CCM_ALT
                                 MBEDTLS_CHECK_PARAMS
                                 MBEDTLS_CHECK_PARAMS_ASSERT
+                                MBEDTLS_AES_ALT
+                                MBEDTLS_SHA256_ALT
                                 OPENTHREAD_CONFIG_FILE="openthread-core-${IFX_PLATFORM}-config.h"
                                 OPENTHREAD_CONFIG_PLATFORM_ASSERT_MANAGEMENT
                                 OPENTHREAD_PROJECT_CORE_CONFIG_FILE="openthread-core-${IFX_PLATFORM}-config.h"
@@ -47,9 +49,12 @@ add_library(
                 logging.c
                 misc.c
                 radio.c
+                radio_wrapper.cpp
                 settings.c
                 system.c
                 uart.c
+                ${PROJECT_SOURCE_DIR}/openthread/examples/platforms/utils/link_metrics.cpp
+                ${PROJECT_SOURCE_DIR}/openthread/examples/platforms/utils/mac_frame.cpp
             )
 
 # Add compile options for platform library
@@ -58,6 +63,7 @@ target_compile_definitions(
                             PRIVATE
                                 CLI_COMMAND_SEPARATOR
                                 PACKET_STATISTICS=0
+                                SERIAL_FLASH=0
                           )
 
 if(I15DOT4_IEEE_EUI64)
