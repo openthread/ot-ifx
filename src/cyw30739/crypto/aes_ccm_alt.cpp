@@ -31,138 +31,177 @@
  *   This file implements AES-CCM using mbedtls CCM.
  */
 
-#include "aes_ccm.hpp"
-
-#if defined(OPENTHREAD_AESCCM_ALT)
-
 #include <limits.h>
 
+#include "aes_ccm_alt.hpp"
+#include <string.h>
+#include <openthread/error.h>
 #include "common/code_utils.hpp"
-#include "common/debug.hpp"
-#include "common/encoding.hpp"
-#include "mbedtls/ccm.h"
+#include "common/message.hpp"
+#include "openthread/platform/crypto.h"
+
+#if defined(MBEDTLS_CCM_ALT)
 
 #define aes_ccm_calloc calloc
 #define aes_ccm_free free
 
-namespace ot {
-namespace Crypto {
-
-void AesCcm::SetKey(const uint8_t *aKey, uint16_t aKeyLength)
+otError otPlatCryptoCcmCreate(otCryptoContext *aContext)
 {
-    mbedtls_ccm_setkey(&mContext, MBEDTLS_CIPHER_ID_AES, aKey, aKeyLength << 3);
+    platform_ccm_ctx_t *ccm_ctx;
+    otError             error = OT_ERROR_NONE;
+
+    ccm_ctx = (platform_ccm_ctx_t *)aes_ccm_calloc(1, sizeof(platform_ccm_ctx_t));
+    VerifyOrExit(ccm_ctx != nullptr, error = OT_ERROR_NO_BUFS);
+
+    ccm_ctx->mOriginal_ctx =
+        (ot::Crypto::AesCcm::aesccm_context_t *)aContext->mContext; /* store the original context */
+    aContext->mContext     = (void *)ccm_ctx;
+    aContext->mContextSize = sizeof(platform_ccm_ctx_t);
+
+    mbedtls_ccm_init(&ccm_ctx->mMbed_ccm_ctx);
+
+exit:
+    return error;
 }
 
-void AesCcm::SetKey(const Mac::Key &aMacKey)
+otError otPlatCryptoCcmFree(otCryptoContext *aContext)
 {
-    mbedtls_ccm_setkey(&mContext, MBEDTLS_CIPHER_ID_AES, aMacKey.GetKey(), Mac::Key::kSize << 3);
-}
+    platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
 
-void AesCcm::Init(uint32_t    aHeaderLength,
-                  uint32_t    aPlainTextLength,
-                  uint8_t     aTagLength,
-                  const void *aNonce,
-                  uint8_t     aNonceLength)
-{
-    mAadLength       = aHeaderLength;
-    mAadCurLength    = 0;
-    mNonceLength     = aNonceLength;
-    mNoncePtr        = (uint8_t *)aNonce;
-    mInputTextLength = aPlainTextLength;
-    mTagLength       = aTagLength;
-    mResult          = kCcmInitFailure;
-    mAadPtr          = NULL;
-
-    mbedtls_ccm_init(&mContext);
-    mAadPtr = (uint8_t *)aes_ccm_calloc(1, mAadLength);
-    if (mAadPtr == NULL)
-        goto outofmemory;
-
-    return;
-
-outofmemory:
-    mResult = kCcmOutOfMemory;
-}
-
-void AesCcm::Header(const void *aHeader, uint32_t aHeaderLength)
-{
-    if (mResult != kCcmInitFailure)
-        return;
-
-    if ((mAadCurLength + aHeaderLength) <= mAadLength)
+    if (ccm_ctx != nullptr)
     {
-        memcpy(mAadPtr + mAadCurLength, aHeader, aHeaderLength);
-        mAadCurLength += aHeaderLength;
+        if (ccm_ctx->mAadPtr != nullptr)
+            aes_ccm_free(ccm_ctx->mAadPtr);
+
+        aes_ccm_free(ccm_ctx);
+    }
+
+    return OT_ERROR_NONE;
+}
+
+otError otPlatCryptoCcmSetKey(otCryptoContext *aContext, const otCryptoKey *aKey)
+{
+    platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
+
+    mbedtls_ccm_setkey(&ccm_ctx->mMbed_ccm_ctx, MBEDTLS_CIPHER_ID_AES, aKey->mKey, aKey->mKeyLength << 3);
+
+    return OT_ERROR_NONE;
+}
+
+otError otPlatCryptoCcmInit(otCryptoContext *aContext,
+                            uint32_t         aHeaderLength,
+                            uint32_t         aPlainTextLength,
+                            uint8_t          aTagLength,
+                            const void *     aNonce,
+                            uint8_t          aNonceLength)
+{
+    platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
+    otError             error   = OT_ERROR_NONE;
+
+    ccm_ctx->mAadLength       = aHeaderLength;
+    ccm_ctx->mAadCurLength    = 0;
+    ccm_ctx->mNonceLength     = aNonceLength;
+    ccm_ctx->mNoncePtr        = (uint8_t *)aNonce;
+    ccm_ctx->mInputTextLength = aPlainTextLength;
+    ccm_ctx->mTagLength       = aTagLength;
+    ccm_ctx->mAadPtr          = NULL;
+
+    /* allocate memory for aad input */
+    ccm_ctx->mAadPtr = (uint8_t *)aes_ccm_calloc(1, ccm_ctx->mAadLength);
+    VerifyOrExit(ccm_ctx->mAadPtr != nullptr, error = OT_ERROR_NO_BUFS);
+
+exit:
+    return error;
+}
+
+otError otPlatCryptoCcmHeader(otCryptoContext *aContext, const void *aHeader, uint32_t aHeaderLength)
+{
+    platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
+    otError             error   = OT_ERROR_NONE;
+
+    if ((ccm_ctx->mAadCurLength + aHeaderLength) <= ccm_ctx->mAadLength)
+    {
+        memcpy(ccm_ctx->mAadPtr + ccm_ctx->mAadCurLength, aHeader, aHeaderLength);
+        ccm_ctx->mAadCurLength += aHeaderLength;
     }
     else
     {
-        mResult = kCcmAadLenMismatch;
+        error = OT_ERROR_INVALID_ARGS;
     }
+
+    return error;
 }
 
-void AesCcm::Payload(void *aPlainText, void *aCipherText, uint32_t aLength, Mode aMode)
+otError otPlatCryptoCcmPayload(otCryptoContext *aContext,
+                               void *           aPlainText,
+                               void *           aCipherText,
+                               uint32_t         aLength,
+                               uint8_t          aMode)
 {
-    int ret;
+    platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
+    otError             error   = OT_ERROR_NONE;
+    int                 ret     = 0;
 
-    if ((mResult != kCcmInitFailure) && (mResult != kCcmSuccess))
-        return;
-
-    if (aLength != mInputTextLength)
-    {
-        mResult = kCcmPayloadLenMismatch;
-        return;
-    }
+    VerifyOrExit(aLength == ccm_ctx->mInputTextLength, error = OT_ERROR_INVALID_ARGS);
 
     switch (aMode)
     {
     case kEncrypt:
-        ret = mbedtls_ccm_encrypt_and_tag(&mContext, mInputTextLength, mNoncePtr, mNonceLength, mAadPtr, mAadLength,
-                                          (uint8_t *)aPlainText, (uint8_t *)aCipherText, (uint8_t *)mTag, mTagLength);
+        ret = mbedtls_ccm_encrypt_and_tag(&ccm_ctx->mMbed_ccm_ctx, ccm_ctx->mInputTextLength, ccm_ctx->mNoncePtr,
+                                          ccm_ctx->mNonceLength, ccm_ctx->mAadPtr, ccm_ctx->mAadLength,
+                                          (uint8_t *)aPlainText, (uint8_t *)aCipherText, (uint8_t *)ccm_ctx->mTag,
+                                          ccm_ctx->mTagLength);
         break;
     case kDecrypt:
-        ret = mbedtls_ccm_auth_decrypt(&mContext, mInputTextLength, mNoncePtr, mNonceLength, mAadPtr, mAadLength,
-                                       (uint8_t *)aCipherText, (uint8_t *)aPlainText, (uint8_t *)mTag, mTagLength);
+        mbedtls_ccm_auth_decrypt(&ccm_ctx->mMbed_ccm_ctx, ccm_ctx->mInputTextLength, ccm_ctx->mNoncePtr,
+                                 ccm_ctx->mNonceLength, ccm_ctx->mAadPtr, ccm_ctx->mAadLength, (uint8_t *)aCipherText,
+                                 (uint8_t *)aPlainText, NULL, ccm_ctx->mTagLength);
+        mbedtls_ccm_get_decrypt_tag(&ccm_ctx->mMbed_ccm_ctx, (uint8_t *)ccm_ctx->mTag, ccm_ctx->mTagLength);
         break;
     default:
-        mResult = kCcmBadInput;
-        return;
+        error = OT_ERROR_INVALID_ARGS;
     }
 
-    if (ret == 0)
-        mResult = kCcmSuccess;
-    else if (ret == MBEDTLS_ERR_CCM_AUTH_FAILED)
-        mResult = kCcmAuthFail;
+    if (ret == MBEDTLS_ERR_CCM_AUTH_FAILED)
+        error = OT_ERROR_SECURITY;
     else if (ret == MBEDTLS_ERR_CCM_BAD_INPUT)
-        mResult = kCcmBadInput;
+        error = OT_ERROR_INVALID_ARGS;
+    if (ret != 0)
+        printf("AesCcmAlt error %d\n", error);
+
+exit:
+    return error;
 }
 
-void AesCcm::Finalize(void *aTag)
+otError otPlatCryptoCcmMessagePayload(otCryptoContext *aContext, uint8_t aMode)
 {
-    if (mResult == kCcmSuccess)
-        memcpy(aTag, mTag, mTagLength);
+    platform_ccm_ctx_t *ccm_ctx  = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
+    ot::Message *       aMessage = ccm_ctx->mOriginal_ctx->mMessage;
+    otError             error    = OT_ERROR_NONE;
+    void *              buf;
+    uint16_t            length;
 
-    if (mResult != kCcmOutOfMemory)
-        aes_ccm_free(mAadPtr);
+    buf = aes_ccm_calloc(1, ccm_ctx->mInputTextLength);
+    VerifyOrExit(buf != nullptr, error = OT_ERROR_NO_BUFS);
 
-    if (mResult != kCcmSuccess)
-        printf("AesCcmAlt result %d\n", mResult);
+    length = aMessage->ReadBytes(aMessage->GetOffset(), buf, ccm_ctx->mInputTextLength);
+    otPlatCryptoCcmPayload(aContext, buf, buf, length, aMode);
+    aMessage->WriteBytes(aMessage->GetOffset(), buf, length);
+    aMessage->MoveOffset(length);
+
+    aes_ccm_free(buf);
+
+exit:
+    return error;
 }
 
-void AesCcm::GenerateNonce(const Mac::ExtAddress &aAddress,
-                           uint32_t               aFrameCounter,
-                           uint8_t                aSecurityLevel,
-                           uint8_t *              aNonce)
+otError otPlatCryptoCcmFinalize(otCryptoContext *aContext, void *aTag)
 {
-    memcpy(aNonce, aAddress.m8, sizeof(Mac::ExtAddress));
-    aNonce += sizeof(Mac::ExtAddress);
+    platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
 
-    Encoding::BigEndian::WriteUint32(aFrameCounter, aNonce);
-    aNonce += sizeof(uint32_t);
+    memcpy(aTag, ccm_ctx->mTag, ccm_ctx->mTagLength);
 
-    aNonce[0] = aSecurityLevel;
+    return OT_ERROR_NONE;
 }
 
-} // namespace Crypto
-} // namespace ot
-
-#endif
+#endif /* !MBEDTLS_CCM_ALT */

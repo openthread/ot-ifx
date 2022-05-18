@@ -28,6 +28,8 @@
 
 # Add third part source files to mbedtls library
 list(APPEND thirdparty_src ${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/mbedtls/library/ccm_alt.c)
+list(APPEND thirdparty_src ${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/mbedtls/library/aes_alt.c)
+list(APPEND thirdparty_src ${CMAKE_CURRENT_SOURCE_DIR}/src/${IFX_PLATFORM}/mbedtls/library/sha256_alt.c)
 list(APPEND thirdparty_lib infineon-base-${IFX_PLATFORM})
 list(
         APPEND

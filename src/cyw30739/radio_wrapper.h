@@ -28,14 +28,15 @@
 
 /**
  * @file
- *   This file defines the related parameters used for packet statistics.
+ *   This file provides the wrapper utilities used between openthread stack and radio Platform
+ *   Abstraction Layer.
  */
 
 #pragma once
 //=================================================================================================
 //  Includes
 //=================================================================================================
-#include <stdio.h>
+#include <openthread/platform/radio.h>
 
 //=================================================================================================
 //  Macros and Literal Definitions
@@ -48,38 +49,60 @@
 //=================================================================================================
 //  Structure
 //=================================================================================================
-typedef struct
-{
-    struct
-    {
-        uint32_t num;
-        struct
-        {
-            uint32_t success;
-            uint32_t no_ack;
-            uint32_t channel_access_failure;
-        } status;
-    } tx;
-
-    struct
-    {
-        uint32_t num;
-    } rx;
-} PACKET_STATISTICS_t;
 
 //=================================================================================================
 //  Function Declaration
 //=================================================================================================
 /**
- * \brief           Get current packet statistics.
+ * \brief       Get start index of frame auxiliary security header.
  *
- * @param[in/out]   p_statistics - memory block to write current statistics.
+ * @param[in]   otRadioFrame *aFrame (I) - pointer to the frame
  *
- * @retval          None
+ * @retval      start index of the frame auxiliary security header
  *
  */
-void otPlatRadioPacketStatisticsGet(PACKET_STATISTICS_t *p_statistics);
+uint8_t radio_wrapper_mac_frame_security_header_idx_get(otRadioFrame *aFrame);
+
+/**
+ * \brief       Get length of frame auxiliary security header.
+ *
+ * @param[in]   otRadioFrame *aFrame (I) - pointer to the frame
+ *
+ * @retval      length of auxiliary security header in the frame
+ *
+ */
+uint8_t radio_wrapper_mac_frame_security_header_length_get(otRadioFrame *aFrame);
+
+/**
+ * \brief       Get start index of frame payload.
+ *
+ * @param[in]   otRadioFrame *aFrame (I) - pointer to the frame
+ *
+ * @retval      start index of the frame payload
+ *
+ */
+uint8_t radio_wrapper_mac_frame_payload_index_get(otRadioFrame *aFrame);
+
+/**
+ * \brief       Get lenght of frame payload.
+ *
+ * @param[in]   otRadioFrame *aFrame (I) - pointer to the frame
+ *
+ * @retval      length of the frame payload
+ *
+ */
+uint16_t radio_wrapper_mac_frame_payload_length_get(otRadioFrame *aFrame);
+
+/**
+ * \brief       Get key id mode in the frame.
+ *
+ * @param[in]   otRadioFrame *aFrame (I) - pointer to the frame
+ *
+ * @retval      key id mode of the frame
+ *
+ */
+uint8_t radio_wrapper_mac_frame_key_id_mode_get(otRadioFrame *aFrame);
 
 //=================================================================================================
-//	End of File (packet_statistics.h)
+//  End of File (radio_wrapper.h)
 //=================================================================================================

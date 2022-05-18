@@ -7,10 +7,10 @@
 * Tools Package 2.3.0.4276
 * 30739A0 CSP
 * personalities 1.0.0.31
-* udd 3.0.0.1539
+* udd 3.0.0.1636
 *
 ********************************************************************************
-* Copyright 2021 Cypress Semiconductor Corporation
+* Copyright 2022 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
