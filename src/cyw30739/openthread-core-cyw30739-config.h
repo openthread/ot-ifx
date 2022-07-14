@@ -97,4 +97,12 @@
  */
 #define RADIO_CONFIG_SRC_MATCH_EXT_ENTRY_NUM 0
 
+/**
+ * @def OPENTHREAD_CONFIG_MAC_CSL_REQUEST_AHEAD_US
+ *
+ * Define how many microseconds ahead should MAC deliver CSL frame to SubMac.
+ *
+ */
+#define OPENTHREAD_CONFIG_MAC_CSL_REQUEST_AHEAD_US 5000
+
 #endif /* OPENTHREAD_CORE_CYW30739_CONFIG_H_ */

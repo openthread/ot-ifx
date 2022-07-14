@@ -47,15 +47,11 @@ static inline void init_cycfg_routing(void) {}
 #define ioss_0_pin_6_AUX UNKNOWN
 #define ioss_0_pin_10_AUX UNKNOWN
 #define ioss_0_pin_16_AUX UNKNOWN
-#define ioss_0_pin_17_AUX UNKNOWN
 #define ioss_0_pin_25_AUX UNKNOWN
-#define ioss_0_pin_26_AUX UNKNOWN
 #define ioss_0_pin_28_AUX UNKNOWN
 #define ioss_0_pin_29_AUX UNKNOWN
 #endif
 
-#define amplifiers_0_rx_pu_0_TRIGGER_IN WICED_RX_PU
-#define amplifiers_0_tx_pu_0_TRIGGER_IN WICED_TX_PU
 #define pwm_0_pwm_0_TRIGGER_IN WICED_PWM0
 #define spi_1_clk_0_TRIGGER_IN WICED_SPI_2_CLK
 #define spi_1_cs_0_TRIGGER_IN WICED_SPI_2_CS

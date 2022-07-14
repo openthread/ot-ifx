@@ -122,17 +122,21 @@ set -euxo pipefail
 
 readonly OT_OPTIONS=(
     "-DCMAKE_BUILD_TYPE=Debug"
-    "-DOT_PLATFORM=external"
     "-DI15DOT4_IEEE_EUI64="
     "-DOT_APP_NCP=OFF"
     "-DOT_APP_RCP=OFF"
+    "-DOT_BORDER_ROUTER=ON"
+    "-DOT_COMMISSIONER=ON"
     "-DOT_DHCP6_CLIENT=ON"
+    "-DOT_DUA=ON"
     "-DOT_JOINER=ON"
+    "-DOT_MLR=ON"
+    "-DOT_LINK_METRICS_SUBJECT=ON"
+    "-DOT_LOG_LEVEL=CRIT"
+    "-DOT_PLATFORM=external"
     "-DOT_RCP=OFF"
     "-DOT_SLAAC=ON"
     "-DOT_THREAD_VERSION=1.2"
-    "-DOT_LOG_LEVEL=CRIT"
-    "-DOT_LINK_METRICS_SUBJECT=ON"
 )
 
 # Keep folder information

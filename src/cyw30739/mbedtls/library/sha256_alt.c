@@ -42,19 +42,54 @@
 #include "mbedtls/sha256.h"
 
 #if defined(MBEDTLS_SHA256_ALT)
-#define mbedtls_calloc calloc
-#define mbedtls_free free
 
 #define SHA256_VALIDATE_RET(cond) MBEDTLS_INTERNAL_VALIDATE_RET(cond, MBEDTLS_ERR_SHA256_BAD_INPUT_DATA)
 #define SHA256_VALIDATE(cond) MBEDTLS_INTERNAL_VALIDATE(cond)
 
-#define SHA_IN_MAX_LENGTH 1500
+static void print_mem_alloc_fail(void)
+{
+    printf("SHA256_alt: alloc fail\n");
+}
+
+static sha_in_node_t *create_fill_node(const unsigned char *input, size_t ilen)
+{
+    sha_in_node_t *p_node;
+    uint8_t *      p_data;
+
+    if ((p_node = calloc(1, sizeof(sha_in_node_t))) == NULL)
+        return NULL;
+    if ((p_data = calloc(1, ilen)) == NULL)
+    {
+        free(p_node);
+        return NULL;
+    }
+
+    memcpy(p_data, input, ilen);
+    p_node->sha_in = p_data;
+    p_node->len    = ilen;
+    p_node->next   = NULL;
+
+    return p_node;
+}
+
+static void free_all_node(slist_node_t *p_list)
+{
+    sha_in_node_t *p_node;
+
+    while ((p_node = (sha_in_node_t *)slist_get(p_list)) != NULL)
+    {
+        free(p_node->sha_in);
+        free(p_node);
+    }
+    INIT_SLIST_NODE(p_list);
+}
 
 void mbedtls_sha256_init(mbedtls_sha256_context *ctx)
 {
     SHA256_VALIDATE(ctx != NULL);
 
     memset(ctx, 0, sizeof(mbedtls_sha256_context));
+    INIT_SLIST_NODE(&ctx->sha_in_list);
 }
 
 void mbedtls_sha256_free(mbedtls_sha256_context *ctx)
@@ -62,27 +97,53 @@ void mbedtls_sha256_free(mbedtls_sha256_context *ctx)
     if (ctx == NULL)
         return;
 
-    free(ctx->p_sha_in);
+    free_all_node(&ctx->sha_in_list);
     mbedtls_platform_zeroize(ctx, sizeof(mbedtls_sha256_context));
 }
 
 void mbedtls_sha256_clone(mbedtls_sha256_context *dst, const mbedtls_sha256_context *src)
 {
+    sha_in_node_t *p_dst_node, *p_src_first_node, *p_src_node;
+    uint8_t *      p_dst_data, *p_temp;
+
     SHA256_VALIDATE(dst != NULL);
     SHA256_VALIDATE(src != NULL);
 
-    mbedtls_sha256_init(dst);
-
-    dst->p_sha_in = calloc(1, SHA_IN_MAX_LENGTH);
-    if (dst->p_sha_in == NULL)
+    if (src->sha_in_len != 0)
     {
-        printf("Err: clone mem fail\n");
-        return;
+        /* allocate dst node and sha input */
+        if ((p_dst_node = calloc(1, sizeof(sha_in_node_t))) == NULL)
+            goto error;
+        if ((p_dst_data = calloc(1, src->sha_in_len)) == NULL)
+        {
+            free(p_dst_node);
+            goto error;
+        }
+
+        /* copy data from source to destination */
+        p_src_first_node = (sha_in_node_t *)slist_front((slist_node_t *)&src->sha_in_list);
+        p_src_node       = p_src_first_node;
+        p_temp           = p_dst_data;
+        do
+        {
+            memcpy(p_temp, p_src_node->sha_in, p_src_node->len);
+            p_temp += p_src_node->len;
+            p_src_node = (sha_in_node_t *)p_src_node->next;
+        } while (p_src_node != p_src_first_node);
+
+        /* add the new allocated and copied node to destination list */
+        p_dst_node->sha_in = p_dst_data;
+        p_dst_node->len    = src->sha_in_len;
+        slist_add_tail((slist_node_t *)p_dst_node, &dst->sha_in_list);
     }
 
-    memcpy(dst->p_sha_in, src->p_sha_in, src->sha_in_len);
     dst->sha_in_len = src->sha_in_len;
     dst->sha2_mode  = src->sha2_mode;
+
+    return;
+
+error:
+    print_mem_alloc_fail();
 }
 
 /*
@@ -98,17 +159,9 @@ int mbedtls_sha256_starts_ret(mbedtls_sha256_context *ctx, int is224)
     else
         ctx->sha2_mode = HW_SHA256;
 
-    if (ctx->p_sha_in == NULL)
-    {
-        ctx->p_sha_in = calloc(1, SHA_IN_MAX_LENGTH);
-        if (ctx->p_sha_in == NULL)
-        {
-            printf("Err: alloc mem fail\n");
-            return MBEDTLS_ERR_SHA256_HW_ACCEL_FAILED;
-        }
-    }
+    free_all_node(&ctx->sha_in_list);
     ctx->sha_in_len = 0;
-    memset(ctx->p_sha_in, 0, SHA_IN_MAX_LENGTH);
+
     return (0);
 }
 
@@ -131,21 +184,21 @@ void mbedtls_sha256_process(mbedtls_sha256_context *ctx, const unsigned char dat
 
 int mbedtls_sha256_update_ret(mbedtls_sha256_context *ctx, const unsigned char *input, size_t ilen)
 {
+    sha_in_node_t *p_node;
+
     SHA256_VALIDATE_RET(ctx != NULL);
     SHA256_VALIDATE_RET(ilen == 0 || input != NULL);
-    SHA256_VALIDATE_RET(ctx->p_sha_in != NULL);
 
     if (ilen == 0)
         return (0);
 
-    if ((ctx->sha_in_len + ilen) >= SHA_IN_MAX_LENGTH)
+    if ((p_node = create_fill_node(input, ilen)) == NULL)
     {
-        printf("Err: large sha_input\n");
-        ctx->sha_in_len = SHA_IN_MAX_LENGTH;
-        return MBEDTLS_ERR_SHA256_BAD_INPUT_DATA;
+        print_mem_alloc_fail();
+        return MBEDTLS_ERR_SHA256_HW_ACCEL_FAILED;
     }
 
-    memcpy(ctx->p_sha_in + ctx->sha_in_len, input, ilen);
+    slist_add_tail((slist_node_t *)p_node, &ctx->sha_in_list);
     ctx->sha_in_len += ilen;
 
     return (0);
@@ -161,13 +214,31 @@ void mbedtls_sha256_update(mbedtls_sha256_context *ctx, const unsigned char *inp
  */
 int mbedtls_sha256_finish_ret(mbedtls_sha256_context *ctx, unsigned char output[32])
 {
-    uint8_t  sha_ret;
-    tHW_SHA2 hw_sha256;
+    uint8_t        sha_ret;
+    tHW_SHA2       hw_sha256;
+    uint8_t *      p_sha_in, *p_temp;
+    sha_in_node_t *p_first_node, *p_node;
 
     SHA256_VALIDATE_RET(ctx != NULL);
     SHA256_VALIDATE_RET((unsigned char *)output != NULL);
-    SHA256_VALIDATE_RET(ctx->p_sha_in != NULL);
-    SHA256_VALIDATE_RET(ctx->sha_in_len != SHA_IN_MAX_LENGTH);
+    SHA256_VALIDATE_RET(!slist_empty(&ctx->sha_in_list));
+    SHA256_VALIDATE_RET(ctx->sha_in_len != 0);
+
+    if ((p_sha_in = calloc(1, ctx->sha_in_len)) == NULL)
+    {
+        print_mem_alloc_fail();
+        return (MBEDTLS_ERR_SHA256_HW_ACCEL_FAILED);
+    }
+
+    p_first_node = (sha_in_node_t *)slist_front(&ctx->sha_in_list);
+    p_node       = p_first_node;
+    p_temp       = p_sha_in;
+    do
+    {
+        memcpy(p_temp, p_node->sha_in, p_node->len);
+        p_temp += p_node->len;
+        p_node = (sha_in_node_t *)p_node->next;
+    } while (p_node != p_first_node);
 
     hw_sha256.polling_flag = HW_SECENG_POLLING;
     hw_sha256.hmac_en      = 0;
@@ -175,15 +246,20 @@ int mbedtls_sha256_finish_ret(mbedtls_sha256_context *ctx, unsigned char output[
     hw_sha256.msg_len      = ctx->sha_in_len;
     hw_sha256.key_len      = 0;
     hw_sha256.key_ptr      = NULL;
-    hw_sha256.in_ptr       = (uint32_t *)ctx->p_sha_in;
+    hw_sha256.in_ptr       = (uint32_t *)p_sha_in;
     hw_sha256.out_ptr      = output;
     hw_sha256.callback     = NULL;
 
     sha_ret = hw_sha2_engine(&hw_sha256);
 
+    /* free memory after finish and reset context  */
+    free(p_sha_in);
+    free_all_node(&ctx->sha_in_list);
+    ctx->sha_in_len = 0;
+
     if (sha_ret != HW_SHA2_COMPLETE)
     {
-        printf("HW sha fail %d\n", sha_ret);
+        printf("SHA256_alt: HW fail %d\n", sha_ret);
         return MBEDTLS_ERR_SHA256_HW_ACCEL_FAILED;
     }
 
