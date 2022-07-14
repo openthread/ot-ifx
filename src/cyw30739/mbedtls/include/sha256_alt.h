@@ -36,6 +36,7 @@
  *   This file includes definitions for performing SHA of HW security engine
  */
 
+#include "slist.h"
 #include <mbedtls/cipher.h>
 
 #ifndef MBEDTLS_SHA256_ALT_H
@@ -92,6 +93,21 @@ typedef struct _tHW_SHA2
 } tHW_SHA2;
 
 /**
+ * \brief           The node to store every mbedtls_sha256_update data
+ *
+ * \param sha_in    The allocated memory pointer, data is copyed from sha256_update input.
+ * \param len       The data length of memory sha_in .
+ * \param next_node The node of next sha256_update input.
+ */
+typedef struct sha_in_node sha_in_node_t;
+typedef struct sha_in_node
+{
+    slist_node_t *next;
+    uint8_t *     sha_in;
+    uint16_t      len;
+} sha_in_node_t;
+
+/**
  * \brief          The SHA-256 context structure.
  *
  *                 The structure is used both for SHA-256 and for SHA-224
@@ -100,9 +116,9 @@ typedef struct _tHW_SHA2
  */
 typedef struct mbedtls_sha256_context
 {
-    uint8_t *p_sha_in;
-    uint16_t sha_in_len;
-    uint8_t  sha2_mode;
+    slist_node_t sha_in_list;
+    uint16_t     sha_in_len;
+    uint8_t      sha2_mode;
 } mbedtls_sha256_context;
 
 /**

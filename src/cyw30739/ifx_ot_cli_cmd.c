@@ -117,7 +117,9 @@ static const otCliCommand ifx_ot_cli_commands[] = {
 #endif // SERIAL_FLASH
 };
 
+#if SERIAL_FLASH
 static IFX_OT_CLI_CMD_CB_t ifx_ot_cli_cmd_cb = {0};
+#endif // SERIAL_FLASH
 
 //=================================================================================================
 //	Global Functions

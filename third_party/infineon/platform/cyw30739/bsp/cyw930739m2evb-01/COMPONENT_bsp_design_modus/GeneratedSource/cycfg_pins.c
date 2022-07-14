@@ -92,6 +92,18 @@
     .default_state = GPIO_PIN_OUTPUT_HIGH, \
     .button_pressed_value = GPIO_PIN_OUTPUT_LOW, \
 }
+#define GPIO2_config \
+{\
+    .gpio = (wiced_bt_gpio_numbers_t*)&platform_gpio_pins[PLATFORM_GPIO_6].gpio_pin, \
+    .config = GPIO_OUTPUT_ENABLE | GPIO_INPUT_DISABLE, \
+    .default_state = GPIO_PIN_OUTPUT_LOW, \
+ }
+#define GPIO3_config \
+{\
+    .gpio = (wiced_bt_gpio_numbers_t*)&platform_gpio_pins[PLATFORM_GPIO_8].gpio_pin, \
+    .config = GPIO_OUTPUT_ENABLE | GPIO_INPUT_DISABLE, \
+    .default_state = GPIO_PIN_OUTPUT_LOW, \
+ }
 #define DEBUG_UART_TXD_config \
 {\
     .gpio = (wiced_bt_gpio_numbers_t*)&platform_gpio_pins[PLATFORM_GPIO_11].gpio_pin, \
@@ -110,7 +122,7 @@
     .config = GPIO_OUTPUT_ENABLE | GPIO_PULL_UP, \
     .default_state = GPIO_PIN_OUTPUT_HIGH, \
  }
-#define GPIO2_config \
+#define GPIO1_config \
 {\
     .gpio = (wiced_bt_gpio_numbers_t*)&platform_gpio_pins[PLATFORM_GPIO_3].gpio_pin, \
     .config = GPIO_INPUT_ENABLE | GPIO_PULL_UP_DOWN_NONE, \
@@ -146,9 +158,9 @@ const wiced_platform_gpio_t platform_gpio_pins[] =
 	[PLATFORM_GPIO_3] = {WICED_P07, WICED_GPIO},
 	[PLATFORM_GPIO_4] = {WICED_P10, uart_1_txd_0_TRIGGER_IN},
 	[PLATFORM_GPIO_5] = {WICED_P16, spi_1_clk_0_TRIGGER_IN},
-	[PLATFORM_GPIO_6] = {WICED_P17, amplifiers_0_rx_pu_0_TRIGGER_IN},
+	[PLATFORM_GPIO_6] = {WICED_P17, WICED_GPIO},
 	[PLATFORM_GPIO_7] = {WICED_P25, spi_1_cs_0_TRIGGER_IN},
-	[PLATFORM_GPIO_8] = {WICED_P26, amplifiers_0_tx_pu_0_TRIGGER_IN},
+	[PLATFORM_GPIO_8] = {WICED_P26, WICED_GPIO},
 	[PLATFORM_GPIO_9] = {WICED_P28, spi_1_mosi_0_TRIGGER_IN},
 	[PLATFORM_GPIO_10] = {WICED_P29, spi_1_miso_0_TRIGGER_IN},
 	[PLATFORM_GPIO_11] = {WICED_P33, WICED_GPIO},
@@ -178,7 +190,9 @@ const wiced_platform_gpio_config_t platform_gpio[] =
 	[WICED_PLATFORM_GPIO_6] = GPIO6_config,
 	[WICED_PLATFORM_GPIO_7] = DEBUG_UART_TXD_config,
 #else // !CHIP_PACKAGE_WLCSP
-	[WICED_PLATFORM_GPIO_2] = GPIO2_config,
+    [WICED_PLATFORM_GPIO_1] = GPIO1_config,
+    [WICED_PLATFORM_GPIO_2] = GPIO2_config,
+    [WICED_PLATFORM_GPIO_3] = GPIO3_config,
 	[WICED_PLATFORM_GPIO_7] = DEBUG_UART_TXD_config,
 #endif // CHIP_PACKAGE_WLCSP
 };
