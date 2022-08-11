@@ -126,9 +126,13 @@ readonly OT_OPTIONS=(
     "-DOT_APP_NCP=OFF"
     "-DOT_APP_RCP=OFF"
     "-DOT_BORDER_ROUTER=ON"
+    "-DOT_COAP=ON"
+    "-DOT_COAPS=ON"
     "-DOT_COMMISSIONER=ON"
     "-DOT_DHCP6_CLIENT=ON"
+    "-DOT_DNS_CLIENT=ON"
     "-DOT_DUA=ON"
+    "-DOT_ECDSA=ON"
     "-DOT_JOINER=ON"
     "-DOT_MLR=ON"
     "-DOT_LINK_METRICS_SUBJECT=ON"
@@ -136,6 +140,7 @@ readonly OT_OPTIONS=(
     "-DOT_PLATFORM=external"
     "-DOT_RCP=OFF"
     "-DOT_SLAAC=ON"
+    "-DOT_SRP_CLIENT=ON"
     "-DOT_THREAD_VERSION=1.2"
 )
 
