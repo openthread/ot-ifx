@@ -29,8 +29,19 @@
 add_library(
                 infineon-board-${IFX_BOARD}
                 COMPONENT_bsp_design_modus/GeneratedSource/cycfg_pins.c
+                TARGET_CYW930739M2EVB-01/epa.c
+                TARGET_CYW930739M2EVB-01/gd25wq64e.c
                 TARGET_CYW930739M2EVB-01/platform.c
            )
+
+# Add compile option for platform board library
+target_compile_definitions(
+    infineon-board-${IFX_BOARD}
+    PUBLIC
+	CHIP_PACKAGE_WLCSP=0
+        WICED_PLATFORM_EPA=1
+        WICED_PLATFORM_ELNA=0
+)
 
 # Add include directory for platform board library
 target_include_directories(

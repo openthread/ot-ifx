@@ -57,6 +57,10 @@
 #define ALARM_TRIGGER_REPLACE 1
 #endif // ALARM_TRIGGER_REPLACE
 
+#ifndef XTAL_ACCURACY
+#define XTAL_ACCURACY 20 // Crystal frequency accuracy: ±20ppm
+#endif
+
 /* Enabled timer information. */
 typedef struct alarm_timer_info
 {
@@ -410,4 +414,9 @@ void otPlatAlramInit(void)
     INIT_SLIST_NODE(&alarm_cb.fired_alarm_list);
 
     alarm_cb.initialized = WICED_TRUE;
+}
+
+uint16_t otPlatTimeGetXtalAccuracy(void)
+{
+    return XTAL_ACCURACY;
 }

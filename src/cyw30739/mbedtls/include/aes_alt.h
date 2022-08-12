@@ -28,63 +28,39 @@
 
 /**
  * @file
- *   This file includes definitions for performing AES-CCM computations.
+ *   This file includes definitions for performing AES by platform
  */
 
-#ifndef AES_CCM_ALT_HPP_
-#define AES_CCM_ALT_HPP_
+#ifndef MBEDTLS_AES_ALT_H
+#define MBEDTLS_AES_ALT_H
 
-#include <stdint.h>
-#include "crypto/aes_ccm.hpp"
-#include "mbedtls/ccm.h"
+// Regular implementation
+//
 
 /**
- * @addtogroup core-security
- *
- * @{
- *
+ * \brief The AES context-type definition.
  */
+#define N_ROW 4
+#define N_COL 4
+#define N_BLOCK (N_ROW * N_COL)
+#define N_MAX_ROUNDS 14
 
-/**
- * This class implements AES CCM computation.
- *
- */
-enum
-{
-    kMinTagLength = 4,  ///< Minimum tag length (in bytes).
-    kNonceSize    = 13, ///< Size of IEEE 802.15.4 Nonce (in bytes).
-};
-
-/**
- * This enumeration type represent the encryption vs decryption mode.
- *
- */
-enum Mode
-{
-    kEncrypt, // Encryption mode.
-    kDecrypt, // Decryption mode.
-};
-
-/**
- * This structure type represent the context that platform-ccm needs.
- *
- */
 typedef struct
 {
-    mbedtls_ccm_context                   mMbed_ccm_ctx;
-    uint32_t                              mInputTextLength;
-    uint8_t                               mNonceLength;
-    uint8_t *                             mNoncePtr;
-    uint8_t                               mAadLength;
-    uint8_t *                             mAadPtr;
-    uint8_t                               mAadCurLength;
-    uint8_t                               mTagLength;
-    uint32_t                              mTag[4];
-    ot::Crypto::AesCcm::aesccm_context_t *mOriginal_ctx;
-} platform_ccm_ctx_t;
+    uint8_t ksch[(N_MAX_ROUNDS + 1) * N_BLOCK];
+    uint8_t rnd;
+} platform_aes_context;
 
-/**
- * @}
- *
- */
-#endif // AES_CCM_ALT_HPP_
+typedef struct mbedtls_aes_context
+{
+    platform_aes_context aes_enc_ctx[1];
+    platform_aes_context aes_dec_ctx[1];
+} mbedtls_aes_context;
+
+uint8_t smp_aes_set_key(const unsigned char key[], uint8_t keylen, platform_aes_context ctx[1]);
+
+uint8_t smp_aes_encrypt(const unsigned char in[N_BLOCK], unsigned char out[N_BLOCK], const platform_aes_context ctx[1]);
+
+uint8_t smp_aes_decrypt(const unsigned char in[N_BLOCK], unsigned char out[N_BLOCK], const platform_aes_context ctx[1]);
+
+#endif /* MBEDTLS_AES_ALT_H */

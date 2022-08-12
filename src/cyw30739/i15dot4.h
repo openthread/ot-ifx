@@ -38,6 +38,18 @@
 
 #include "i15dot4_types.h"
 
+#ifndef I15DOT4_VARAIABLE_ACK_LENGTH
+#define I15DOT4_VARAIABLE_ACK_LENGTH 1
+#endif // I15DOT4_VARAIABLE_ACK_LENGTH
+
+#ifndef I15DOT4_TX_SCHEDULE_ENABLE
+#define I15DOT4_TX_SCHEDULE_ENABLE 1
+#endif // I15DOT4_TX_SCHEDULE_ENABLE
+
+#ifndef I15DOT4_TX_EPA
+#define I15DOT4_TX_EPA 1
+#endif // I15DOT4_TX_EPA
+
 typedef enum _CONTEXT_ID_t
 {
     CONTEXT_ID_ZBPRO = 0,
@@ -57,13 +69,20 @@ typedef enum
 {
     ADDR_MATCH_DISABLE         = 0,
     ADDR_MATCH_ENABLE          = 1,
-    ADDR_MATCH_SHORT_ADD       = 2,
-    ADDR_MATCH_EXT_ADD         = 3,
-    ADDR_MATCH_SHORT_CLEAR     = 4,
-    ADDR_MATCH_SHORT_CLEAR_ALL = 5,
-    ADDR_MATCH_EXT_CLEAR       = 6,
-    ADDR_MATCH_EXT_CLEAR_ALL   = 7,
+    ADDR_MATCH_ADD             = 2,
+    ADDR_MATCH_CLEAR           = 3,
+    ADDR_MATCH_CLEAR_ALL       = 4,
+    ADDR_MATCH_SET_KEY         = 5,
+    ADDR_MATCH_SET_KEY_ID_MODE = 6,
+    ADDR_MATCH_SET_KEY_INDEX   = 7,
 } ADDR_MATCH_ACTION_t;
+
+typedef enum
+{
+    I15DOT4_ADDR_MATCH_FLAG_FRAME_PENDING = 0x01,
+    I15DOT4_ADDR_MATCH_FLAG_VENDOR_IE     = 0x02,
+    I15DOT4_ADDR_MATCH_FLAG_EXT_ADDR_MODE = 0x80,
+} ADDR_MATCH_TYPE_t;
 
 /* MLME/MCPS status */
 typedef enum
@@ -143,7 +162,11 @@ enum
     I15DOT4_MAX_MAC_PAYLOAD_SIZE        = I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_MIN_MPDU_OVERHEAD,
     I15DOT4_MAX_BEACON_PAYLOAD_LENGTH   = I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_MAX_BEACON_OVERHEAD,
     I15DOT4_FCS_LENGTH                  = 2,
-    I15DOT4_ACK_LENGTH                  = 3,
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    I15DOT4_ACK_LENGTH = I15DOT4_MAX_PHY_PACKET_SIZE,
+#else
+    I15DOT4_ACK_LENGTH = 3,
+#endif
 };
 
 /* Command/Event ID */
@@ -319,6 +342,14 @@ typedef enum
     I15DOT4_MAC_AUTO_REQUEST_KEY_INDEX       = 0x7b,
     I15DOT4_MAC_DEFAULT_KEY_SOURCE           = 0x7c,
     I15DOT4_MAC_EXTENDED_ADDRESS             = 0x80,
+#if I15DOT4_TX_SCHEDULE_ENABLE
+    I15DOT4_MAC_CURRENT_TIME          = 0x81,
+    I15DOT4_MAC_MAX_TX_FRAMES         = 0x82,
+    I15DOT4_MAC_TX_SCHED_TIME_PREPARE = 0x83,
+#endif // I15DOT4_TX_SCHEDULE_ENABLE
+#if I15DOT4_TX_EPA
+    I15DOT4_MAC_TX_EPA_GPIO = 0x84, // refer to I15DOT4_EPA_TX_ENABLE_t
+#endif                              // I15DOT4_TX_EPA
 
     /* BRCM Attributes */
     I15DOT4_BRCM_BEACON_TX_COUNT       = 0x90,
@@ -347,6 +378,16 @@ typedef enum
     I15DOT4_SCAN_TYPE_NONE    = 4,
     I15DOT4_SCAN_TYPE_NUM     = 5,
 } I15DOT4_SCAN_TYPE_t;
+
+#if I15DOT4_TX_EPA
+
+typedef struct __attribute__((packed)) _I15DOT4_EPA_TX_ENABLE
+{
+    uint8_t port;
+    uint8_t enable;
+} I15DOT4_EPA_TX_ENABLE_t;
+
+#endif // I15DOT4_TX_EPA
 
 typedef struct __attribute__((packed)) _I15DOT4_SECURITY_INFO
 {
@@ -1013,10 +1054,21 @@ typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_REQ
     uint8_t  max_frame_retries;
     uint8_t  csma_ca_enabled : 1;
     uint8_t  csl_present : 1;
-    uint8_t  is_security_processed : 1;
-    uint8_t  reserved : 5;
-    uint8_t  psdu_length;
-    uint8_t  psdu[I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_FCS_LENGTH];
+    uint8_t  security_enable : 1;
+#if I15DOT4_TX_SCHEDULE_ENABLE
+    uint8_t tx_sched : 1;
+    uint8_t reserved : 4;
+#else  // !I15DOT4_TX_SCHEDULE_ENABLE
+    uint8_t reserved : 5;
+#endif // I15DOT4_TX_SCHEDULE_ENABLE
+    uint8_t key_id_mode;
+    uint8_t key_index;
+    uint8_t sec_hdr_offset;
+    uint8_t sec_hdr_len;
+    uint8_t payload_offset;
+    uint8_t payload_len;
+    uint8_t psdu_length;
+    uint8_t psdu[I15DOT4_MAX_PHY_PACKET_SIZE - I15DOT4_FCS_LENGTH];
 } I15DOT4_THREAD_DATA_REQ_t;
 
 typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_CONF
@@ -1025,17 +1077,31 @@ typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_CONF
     uint8_t  cmd_id;
     uint8_t  handle;
     uint8_t  status;
-    uint8_t  reserved;
+    uint32_t frame_counter;
+#if !I15DOT4_VARAIABLE_ACK_LENGTH
+    uint8_t reserved;
+#endif
+#if I15DOT4_TX_SCHEDULE_ENABLE
+    uint64_t time_stamp;
+#else  // !I15DOT4_TX_SCHEDULE_ENABLE
     uint32_t time_stamp;
-    uint8_t  ack_frame[I15DOT4_ACK_LENGTH];
+#endif // I15DOT4_TX_SCHEDULE_ENABLE
+#if I15DOT4_VARAIABLE_ACK_LENGTH
+    uint8_t ack_frame_length;
+#endif
+    uint8_t ack_frame[I15DOT4_ACK_LENGTH];
 } I15DOT4_THREAD_DATA_CONF_t;
 
 typedef struct __attribute__((packed)) _I15DOT4_THREAD_DATA_IND
 {
-    uint8_t  context_id;
-    uint8_t  cmd_id;
-    uint8_t  rssi;
+    uint8_t context_id;
+    uint8_t cmd_id;
+    uint8_t rssi;
+#if I15DOT4_TX_SCHEDULE_ENABLE
+    uint64_t symbol_counter;
+#else  // !I15DOT4_TX_SCHEDULE_ENABLE
     uint32_t symbol_counter;
+#endif // I15DOT4_TX_SCHEDULE_ENABLE
     uint32_t ack_frame_pending : 1;
     uint32_t reserved : 31;
     uint8_t  psdu_length;
@@ -1048,6 +1114,9 @@ typedef struct __attribute__((packed)) _I15DOT4_THREAD_ADDR_MATCH_REQ
     uint8_t        cmd_id;
     uint8_t        action;
     I15DOT4_ADDR_t addr;
+    uint8_t        flag; // refer to ADDR_MATCH_TYPE_t
+    uint8_t        buf_len;
+    uint8_t        buf[16];
 } I15DOT4_THREAD_ADDR_MATCH_REQ_t;
 
 typedef struct __attribute__((packed)) _I15DOT4_THREAD_ADDR_MATCH_CONF
