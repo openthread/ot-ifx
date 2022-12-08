@@ -92,7 +92,7 @@ otError otPlatCryptoCcmInit(otCryptoContext *aContext,
                             uint32_t         aHeaderLength,
                             uint32_t         aPlainTextLength,
                             uint8_t          aTagLength,
-                            const void *     aNonce,
+                            const void      *aNonce,
                             uint8_t          aNonceLength)
 {
     platform_ccm_ctx_t *ccm_ctx = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
@@ -133,8 +133,8 @@ otError otPlatCryptoCcmHeader(otCryptoContext *aContext, const void *aHeader, ui
 }
 
 otError otPlatCryptoCcmPayload(otCryptoContext *aContext,
-                               void *           aPlainText,
-                               void *           aCipherText,
+                               void            *aPlainText,
+                               void            *aCipherText,
                                uint32_t         aLength,
                                uint8_t          aMode)
 {
@@ -176,9 +176,9 @@ exit:
 otError otPlatCryptoCcmMessagePayload(otCryptoContext *aContext, uint8_t aMode)
 {
     platform_ccm_ctx_t *ccm_ctx  = static_cast<platform_ccm_ctx_t *>(aContext->mContext);
-    ot::Message *       aMessage = ccm_ctx->mOriginal_ctx->mMessage;
+    ot::Message        *aMessage = ccm_ctx->mOriginal_ctx->mMessage;
     otError             error    = OT_ERROR_NONE;
-    void *              buf;
+    void               *buf;
     uint16_t            length;
 
     buf = aes_ccm_calloc(1, ccm_ctx->mInputTextLength);

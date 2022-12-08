@@ -146,7 +146,7 @@ typedef struct radio_i15dot4_mapping
 typedef struct radio_data_wait_conf_entry
 {
     slist_node_t  node;
-    otInstance *  aInstance;
+    otInstance   *aInstance;
     otRadioFrame *aTxFrame;
 #if I15DOT4_VARAIABLE_ACK_LENGTH
     struct
@@ -174,7 +174,7 @@ typedef struct radio_data_received_frame
 typedef struct radio_csl_tx_element
 {
     slist_node_t  node;
-    otInstance *  aInstance;
+    otInstance   *aInstance;
     otRadioFrame *aTxFrame;
     wiced_timer_t timer;
 } radio_csl_tx_element_t;
@@ -225,7 +225,7 @@ typedef struct radio_cb
 
         struct
         {
-            otInstance * aInstance;
+            otInstance  *aInstance;
             slist_node_t frame_list; // refer to radio_data_received_frame_t
         } rx;
     } data;
@@ -275,7 +275,7 @@ typedef struct radio_cb
     {
         struct
         {
-            otInstance *     aInstance;
+            otInstance      *aInstance;
             uint8_t          aKeyIdMode;
             uint8_t          aKeyId;
             otMacKeyMaterial aKey;
@@ -311,7 +311,7 @@ static uint32_t      radio_i15dot4_application_thread_event_code_get(uint8_t i15
 static wiced_bool_t  radio_i15dot4_mcps_data_req_msdu_handle_get(uint8_t *p_msdu_handle);
 static void          radio_i15dot4_mcps_data_req_timeout_handler(WICED_TIMER_PARAM_TYPE cb_params);
 static slist_node_t *radio_i15dot4_mcps_data_req_wait_conf_add(uint8_t       msdu_handle,
-                                                               otInstance *  aInstance,
+                                                               otInstance   *aInstance,
                                                                otRadioFrame *aFrame);
 static void          radio_i15dot4_mcps_data_req_wait_conf_remove(slist_node_t *p_target, wiced_bool_t free);
 static void          radio_i15dot4_mlme_get_conf_data_reset(void);
@@ -331,8 +331,8 @@ static wiced_bool_t radio_i15dot4_mlme_scan_req(uint8_t  scan_type,
 static wiced_bool_t radio_i15dot4_mlme_set_req(uint8_t attribute_id, uint32_t attribute_len, uint8_t *p_attribute);
 static wiced_bool_t radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t action,
                                                         uint8_t             flag,
-                                                        I15DOT4_ADDR_t *    p_addr,
-                                                        uint8_t *           p_data,
+                                                        I15DOT4_ADDR_t     *p_addr,
+                                                        uint8_t            *p_data,
                                                         uint8_t             data_len);
 static void         radio_i15dot4_thread_data_conf_handler(void);
 static void         radio_i15dot4_thread_data_ind_handler(void);
@@ -415,7 +415,7 @@ void otPlatRadioPacketStatisticsGet(PACKET_STATISTICS_t *p_statistics)
  * @param[in]   aKeyType     Key Type used.
  *
  */
-void otPlatRadioSetMacKey(otInstance *            aInstance,
+void otPlatRadioSetMacKey(otInstance             *aInstance,
                           uint8_t                 aKeyIdMode,
                           uint8_t                 aKeyId,
                           const otMacKeyMaterial *aPrevKey,
@@ -1288,10 +1288,10 @@ void wiced_platform_epa_enable(void)
 #endif // WICED_PLATFORM_EPA && I15DOT4_TX_EPA
 
 #if OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
-otError otPlatRadioConfigureEnhAckProbing(otInstance *         aInstance,
+otError otPlatRadioConfigureEnhAckProbing(otInstance          *aInstance,
                                           otLinkMetrics        aLinkMetrics,
                                           const otShortAddress aShortAddress,
-                                          const otExtAddress * aExtAddress)
+                                          const otExtAddress  *aExtAddress)
 {
     otError error = OT_ERROR_NONE;
 
@@ -1632,7 +1632,7 @@ static void radio_csl_tx_waiting_queue_timeout_callback(WICED_TIMER_PARAM_TYPE c
 static void radio_csl_tx_queue_timeout_handler(void)
 {
     slist_node_t *p_node;
-    otInstance *  aInstance;
+    otInstance   *aInstance;
     otRadioFrame *aTxFrame;
 
     RADIO_TRACE("%s\n", __FUNCTION__);
@@ -1902,7 +1902,7 @@ static void radio_i15dot4_mcps_data_req_wait_conf_remove(slist_node_t *p_target,
  * Add a new entry to the MCPS-DATA.req primitive wait confirm list.
  */
 static slist_node_t *radio_i15dot4_mcps_data_req_wait_conf_add(uint8_t       msdu_handle,
-                                                               otInstance *  aInstance,
+                                                               otInstance   *aInstance,
                                                                otRadioFrame *aFrame)
 {
     slist_node_t *p_new;
@@ -2070,8 +2070,8 @@ static wiced_bool_t radio_i15dot4_thread_data_req(otRadioFrame *aFrame, uint8_t 
  */
 static wiced_bool_t radio_i15dot4_thread_addr_match_req(ADDR_MATCH_ACTION_t action,
                                                         uint8_t             flag,
-                                                        I15DOT4_ADDR_t *    p_addr,
-                                                        uint8_t *           p_data,
+                                                        I15DOT4_ADDR_t     *p_addr,
+                                                        uint8_t            *p_data,
                                                         uint8_t             data_len)
 {
     I15DOT4_THREAD_ADDR_MATCH_REQ_t thread_addr_match_req = {0};
@@ -2277,9 +2277,9 @@ static void radio_hci_vse_callback(uint8_t len, uint8_t *p)
  */
 static void radio_hci_vse_callback_thread_data_ind(uint8_t len, uint8_t *p)
 {
-    I15DOT4_THREAD_DATA_IND_t *  p_thread_data_ind;
+    I15DOT4_THREAD_DATA_IND_t   *p_thread_data_ind;
     radio_data_received_frame_t *p_rx_frame = NULL;
-    uint8_t *                    p_psdu     = NULL;
+    uint8_t                     *p_psdu     = NULL;
 
     /* Check data length. */
     if (len != sizeof(I15DOT4_THREAD_DATA_IND_t))
@@ -2355,7 +2355,7 @@ static void radio_hci_vse_callback_thread_data_conf(uint8_t len, uint8_t *p)
 {
     I15DOT4_THREAD_DATA_CONF_t *p_thread_data_conf;
     int                         i;
-    slist_node_t *              p_node;
+    slist_node_t               *p_node;
 #if !I15DOT4_VARAIABLE_ACK_LENGTH
     I15DOT4_FRAME_CTRL_t *p_frame_ctrl;
 #endif // !I15DOT4_VARAIABLE_ACK_LENGTH
@@ -2965,15 +2965,9 @@ static void radio_utils_data_display(uint8_t data_len, uint8_t *p_data)
     OT_UNUSED_VARIABLE(p_data);
 }
 
-static void radio_utils_data_display_uint64(uint64_t num)
-{
-    OT_UNUSED_VARIABLE(num);
-}
+static void radio_utils_data_display_uint64(uint64_t num) { OT_UNUSED_VARIABLE(num); }
 
-static void radio_utils_data_display_xtAddress(const otExtAddress *aExtAddress)
-{
-    OT_UNUSED_VARIABLE(aExtAddress);
-}
+static void radio_utils_data_display_xtAddress(const otExtAddress *aExtAddress) { OT_UNUSED_VARIABLE(aExtAddress); }
 
 static void radio_utils_radio_frame_display(otRadioFrame *p_frame, wiced_bool_t tx)
 {

@@ -85,11 +85,11 @@ typedef struct _tHW_SHA2
     /* HW_SHA512_224 (5)                                                                               */
     uint16_t          msg_len; /* The length of message to be hashed in bytes: 1-65535.      */
     uint16_t          key_len; /* The length of keys in byte: 1 - 1023      */
-    uint8_t *         key_ptr; /* The pointer points to keys.  MUST be aligned to 4-bytes.      */
-    uint32_t *        in_ptr;  /* The pointer points to input message to be hashed. MUST be aligned to 4-bytes.       */
-    uint8_t *         out_ptr; /* The pointer points to output hash values.      */
+    uint8_t          *key_ptr; /* The pointer points to keys.  MUST be aligned to 4-bytes.      */
+    uint32_t         *in_ptr;  /* The pointer points to input message to be hashed. MUST be aligned to 4-bytes.       */
+    uint8_t          *out_ptr; /* The pointer points to output hash values.      */
     tHW_SHA2_CALLBACK callback;     /* Call back function for HW SHA2 if using interrupt.     */
-    tHW_SHA2 *        hw_sha2_next; /* The pointer points to the next data structure in the waiting line. */
+    tHW_SHA2         *hw_sha2_next; /* The pointer points to the next data structure in the waiting line. */
 } tHW_SHA2;
 
 /**
@@ -103,7 +103,7 @@ typedef struct sha_in_node sha_in_node_t;
 typedef struct sha_in_node
 {
     slist_node_t *next;
-    uint8_t *     sha_in;
+    uint8_t      *sha_in;
     uint16_t      len;
 } sha_in_node_t;
 

@@ -105,11 +105,11 @@ void mbedtls_ccm_free(mbedtls_ccm_context *ctx)
  * Refer to the code in COMPONENT_openthread/src/core/crypto/aes_ccm.cpp
  */
 static void calc_tag_with_no_add(mbedtls_ccm_context *ctx,
-                                 uint8_t *            iv,
+                                 uint8_t             *iv,
                                  size_t               iv_len,
-                                 uint8_t *            text,
+                                 uint8_t             *text,
                                  size_t               length,
-                                 uint8_t *            tag,
+                                 uint8_t             *tag,
                                  size_t               tag_len)
 {
     uint8_t             L;
@@ -209,8 +209,8 @@ static int ccm_auth_crypt(mbedtls_ccm_context *ctx,
                           const unsigned char *add,
                           size_t               add_len,
                           const unsigned char *input,
-                          unsigned char *      output,
-                          unsigned char *      tag,
+                          unsigned char       *output,
+                          unsigned char       *tag,
                           size_t               tag_len)
 {
     tHW_AES  aes;
@@ -317,7 +317,7 @@ static int ccm_auth_crypt(mbedtls_ccm_context *ctx,
             M_SECENG_CLOCK_ON
             out_from_reg = (uint8_t *)REG32(seceng_amdar_adr);
             memcpy(output, out_from_reg, length);
-            for (uint8_t i = 0; i<tag_len>> 2; i++)
+            for (uint8_t i = 0; i < tag_len >> 2; i++)
             {
                 out_mic[i] = REG32(seceng_amicr0_adr + i * 4);
             }
@@ -352,8 +352,8 @@ int mbedtls_ccm_star_encrypt_and_tag(mbedtls_ccm_context *ctx,
                                      const unsigned char *add,
                                      size_t               add_len,
                                      const unsigned char *input,
-                                     unsigned char *      output,
-                                     unsigned char *      tag,
+                                     unsigned char       *output,
+                                     unsigned char       *tag,
                                      size_t               tag_len)
 {
     return (ccm_auth_crypt(ctx, HW_AES_ENC, length, iv, iv_len, add, add_len, input, output, tag, tag_len));
@@ -366,8 +366,8 @@ int mbedtls_ccm_encrypt_and_tag(mbedtls_ccm_context *ctx,
                                 const unsigned char *add,
                                 size_t               add_len,
                                 const unsigned char *input,
-                                unsigned char *      output,
-                                unsigned char *      tag,
+                                unsigned char       *output,
+                                unsigned char       *tag,
                                 size_t               tag_len)
 {
     if (tag_len == 0)
@@ -386,7 +386,7 @@ int mbedtls_ccm_star_auth_decrypt(mbedtls_ccm_context *ctx,
                                   const unsigned char *add,
                                   size_t               add_len,
                                   const unsigned char *input,
-                                  unsigned char *      output,
+                                  unsigned char       *output,
                                   const unsigned char *tag,
                                   size_t               tag_len)
 {
@@ -427,7 +427,7 @@ int mbedtls_ccm_auth_decrypt(mbedtls_ccm_context *ctx,
                              const unsigned char *add,
                              size_t               add_len,
                              const unsigned char *input,
-                             unsigned char *      output,
+                             unsigned char       *output,
                              const unsigned char *tag,
                              size_t               tag_len)
 {

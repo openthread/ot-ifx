@@ -135,10 +135,7 @@ otError otPlatUartEnable(void)
     return OT_ERROR_NONE;
 }
 
-otError otPlatUartDisable(void)
-{
-    return OT_ERROR_NOT_IMPLEMENTED;
-}
+otError otPlatUartDisable(void) { return OT_ERROR_NOT_IMPLEMENTED; }
 
 otError otPlatUartSend(const uint8_t *aBuf, uint16_t aBufLength)
 {
@@ -153,10 +150,7 @@ otError otPlatUartSend(const uint8_t *aBuf, uint16_t aBufLength)
     return OT_ERROR_NONE;
 }
 
-otError otPlatUartFlush(void)
-{
-    return OT_ERROR_NOT_IMPLEMENTED;
-}
+otError otPlatUartFlush(void) { return OT_ERROR_NOT_IMPLEMENTED; }
 
 //------------------------------ Static Function --------------------------------------------------
 

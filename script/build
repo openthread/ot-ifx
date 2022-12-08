@@ -120,7 +120,7 @@ main()
 
 set -euxo pipefail
 
-readonly OT_OPTIONS=(
+OT_OPTIONS=(
     "-DCMAKE_BUILD_TYPE=Debug"
     "-DI15DOT4_IEEE_EUI64="
     "-DOT_APP_NCP=OFF"
@@ -143,6 +143,7 @@ readonly OT_OPTIONS=(
     "-DOT_SRP_CLIENT=ON"
     "-DOT_THREAD_VERSION=1.2"
 )
+readonly OT_OPTIONS
 
 # Keep folder information
 if [[ -n ${BASH_SOURCE[0]} ]]; then

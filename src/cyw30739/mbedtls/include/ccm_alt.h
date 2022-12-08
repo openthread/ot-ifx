@@ -178,8 +178,8 @@ int mbedtls_ccm_encrypt_and_tag(mbedtls_ccm_context *ctx,
                                 const unsigned char *add,
                                 size_t               add_len,
                                 const unsigned char *input,
-                                unsigned char *      output,
-                                unsigned char *      tag,
+                                unsigned char       *output,
+                                unsigned char       *tag,
                                 size_t               tag_len);
 
 /**
@@ -224,8 +224,8 @@ int mbedtls_ccm_star_encrypt_and_tag(mbedtls_ccm_context *ctx,
                                      const unsigned char *add,
                                      size_t               add_len,
                                      const unsigned char *input,
-                                     unsigned char *      output,
-                                     unsigned char *      tag,
+                                     unsigned char       *output,
+                                     unsigned char       *tag,
                                      size_t               tag_len);
 
 /**
@@ -259,7 +259,7 @@ int mbedtls_ccm_auth_decrypt(mbedtls_ccm_context *ctx,
                              const unsigned char *add,
                              size_t               add_len,
                              const unsigned char *input,
-                             unsigned char *      output,
+                             unsigned char       *output,
                              const unsigned char *tag,
                              size_t               tag_len);
 
@@ -302,7 +302,7 @@ int mbedtls_ccm_star_auth_decrypt(mbedtls_ccm_context *ctx,
                                   const unsigned char *add,
                                   size_t               add_len,
                                   const unsigned char *input,
-                                  unsigned char *      output,
+                                  unsigned char       *output,
                                   const unsigned char *tag,
                                   size_t               tag_len);
 

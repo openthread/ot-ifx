@@ -46,15 +46,12 @@
 #define SHA256_VALIDATE_RET(cond) MBEDTLS_INTERNAL_VALIDATE_RET(cond, MBEDTLS_ERR_SHA256_BAD_INPUT_DATA)
 #define SHA256_VALIDATE(cond) MBEDTLS_INTERNAL_VALIDATE(cond)
 
-static void print_mem_alloc_fail(void)
-{
-    printf("SHA256_alt: alloc fail\n");
-}
+static void print_mem_alloc_fail(void) { printf("SHA256_alt: alloc fail\n"); }
 
 static sha_in_node_t *create_fill_node(const unsigned char *input, size_t ilen)
 {
     sha_in_node_t *p_node;
-    uint8_t *      p_data;
+    uint8_t       *p_data;
 
     if ((p_node = calloc(1, sizeof(sha_in_node_t))) == NULL)
         return NULL;
@@ -104,7 +101,7 @@ void mbedtls_sha256_free(mbedtls_sha256_context *ctx)
 void mbedtls_sha256_clone(mbedtls_sha256_context *dst, const mbedtls_sha256_context *src)
 {
     sha_in_node_t *p_dst_node, *p_src_first_node, *p_src_node;
-    uint8_t *      p_dst_data, *p_temp;
+    uint8_t       *p_dst_data, *p_temp;
 
     SHA256_VALIDATE(dst != NULL);
     SHA256_VALIDATE(src != NULL);
@@ -165,10 +162,7 @@ int mbedtls_sha256_starts_ret(mbedtls_sha256_context *ctx, int is224)
     return (0);
 }
 
-void mbedtls_sha256_starts(mbedtls_sha256_context *ctx, int is224)
-{
-    mbedtls_sha256_starts_ret(ctx, is224);
-}
+void mbedtls_sha256_starts(mbedtls_sha256_context *ctx, int is224) { mbedtls_sha256_starts_ret(ctx, is224); }
 
 int mbedtls_internal_sha256_process(mbedtls_sha256_context *ctx, const unsigned char data[64])
 {
@@ -216,7 +210,7 @@ int mbedtls_sha256_finish_ret(mbedtls_sha256_context *ctx, unsigned char output[
 {
     uint8_t        sha_ret;
     tHW_SHA2       hw_sha256;
-    uint8_t *      p_sha_in, *p_temp;
+    uint8_t       *p_sha_in, *p_temp;
     sha_in_node_t *p_first_node, *p_node;
 
     SHA256_VALIDATE_RET(ctx != NULL);
