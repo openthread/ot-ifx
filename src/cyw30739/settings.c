@@ -240,13 +240,13 @@ void otPlatSettingsDeinit(otInstance *aInstance)
 
 otError otPlatSettingsAdd(otInstance *aInstance, uint16_t aKey, const uint8_t *aValue, uint16_t aValueLength)
 {
-    settings_entry_t *           p_target_entry = NULL;
+    settings_entry_t            *p_target_entry = NULL;
     uint16_t                     nb_bytes;
     wiced_result_t               status;
     settings_entry_data_block_t *p_data_block = NULL;
     uint32_t                     data_block_size;
     settings_entry_data_block_t *p_data_block_new = NULL;
-    uint8_t *                    p_index          = NULL;
+    uint8_t                     *p_index          = NULL;
 
     SETTINGS_TRACE("%s\n", __FUNCTION__);
     settings_utils_key_value_display(aKey, aValue, aValueLength);
@@ -380,17 +380,17 @@ otError otPlatSettingsAdd(otInstance *aInstance, uint16_t aKey, const uint8_t *a
 
 otError otPlatSettingsDelete(otInstance *aInstance, uint16_t aKey, int aIndex)
 {
-    settings_entry_t *           p_target_entry = NULL;
+    settings_entry_t            *p_target_entry = NULL;
     settings_entry_data_block_t *p_data_block   = NULL;
     uint16_t                     nb_bytes;
     wiced_result_t               status;
     int32_t                      residual_data_len;
     uint16_t                     block_index   = 0;
-    uint8_t *                    p_index       = NULL;
+    uint8_t                     *p_index       = NULL;
     settings_entry_data_block_t *p_block_index = NULL;
     uint16_t                     block_len;
-    uint8_t *                    p_tmp              = NULL;
-    uint8_t *                    p_index_next_block = NULL;
+    uint8_t                     *p_tmp              = NULL;
+    uint8_t                     *p_index_next_block = NULL;
 
     SETTINGS_TRACE("%s (0x%04X)\n", __FUNCTION__, aKey);
 
@@ -546,13 +546,13 @@ otError otPlatSettingsDelete(otInstance *aInstance, uint16_t aKey, int aIndex)
 
 otError otPlatSettingsGet(otInstance *aInstance, uint16_t aKey, int aIndex, uint8_t *aValue, uint16_t *aValueLength)
 {
-    settings_entry_t *           p_target_entry;
+    settings_entry_t            *p_target_entry;
     settings_entry_data_block_t *p_data;
     uint16_t                     nb_bytes;
     wiced_result_t               status;
     uint16_t                     residual_data_len;
     uint16_t                     block_index   = 0;
-    uint8_t *                    p_index       = NULL;
+    uint8_t                     *p_index       = NULL;
     settings_entry_data_block_t *p_block_index = NULL;
     uint16_t                     block_len;
 

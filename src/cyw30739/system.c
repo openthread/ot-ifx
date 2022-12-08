@@ -97,14 +97,9 @@ void otSysInit(int argc, char *argv[])
 #endif /* CHIP_HAVE_CONFIG_H */
 }
 
-void otSysDeinit(void)
-{
-}
+void otSysDeinit(void) {}
 
-bool otSysPseudoResetWasRequested(void)
-{
-    return false;
-}
+bool otSysPseudoResetWasRequested(void) { return false; }
 
 void otSysProcessDrivers(otInstance *aInstance)
 {

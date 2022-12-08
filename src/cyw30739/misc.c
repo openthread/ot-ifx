@@ -56,7 +56,4 @@ void otPlatReset(otInstance *aInstance)
     wiced_hal_wdog_reset_system();
 }
 
-void otPlatAssertFail(const char *aFilename, int aLineNumber)
-{
-    __assert_func(aFilename, aLineNumber, NULL, NULL);
-}
+void otPlatAssertFail(const char *aFilename, int aLineNumber) { __assert_func(aFilename, aLineNumber, NULL, NULL); }

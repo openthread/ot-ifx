@@ -74,9 +74,9 @@ typedef struct
     mbedtls_ccm_context                   mMbed_ccm_ctx;
     uint32_t                              mInputTextLength;
     uint8_t                               mNonceLength;
-    uint8_t *                             mNoncePtr;
+    uint8_t                              *mNoncePtr;
     uint8_t                               mAadLength;
-    uint8_t *                             mAadPtr;
+    uint8_t                              *mAadPtr;
     uint8_t                               mAadCurLength;
     uint8_t                               mTagLength;
     uint32_t                              mTag[4];

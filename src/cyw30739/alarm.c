@@ -65,7 +65,7 @@
 typedef struct alarm_timer_info
 {
     slist_node_t  node;
-    otInstance *  aInstance;
+    otInstance   *aInstance;
     wiced_timer_t timer;
 } alarm_timer_info_t;
 
@@ -73,7 +73,7 @@ typedef struct alarm_timer_info
 typedef struct alarm_fired
 {
     slist_node_t node;
-    otInstance * aInstance;
+    otInstance  *aInstance;
 } alarm_fired_t;
 
 /* Alarm module control block. */
@@ -155,7 +155,7 @@ static void alarmEnabledTimerListRemove(alarm_timer_info_t *p_target)
 
 static void alarmTimerCallback(WICED_TIMER_PARAM_TYPE cb_params)
 {
-    otInstance *  aInstance;
+    otInstance   *aInstance;
     slist_node_t *p_node;
 
     wiced_rtos_lock_mutex(alarm_cb.p_mutex);
@@ -197,7 +197,7 @@ static void alarmTimerCallback(WICED_TIMER_PARAM_TYPE cb_params)
 static void alarmTimeoutHandler(void)
 {
     slist_node_t *p_node;
-    otInstance *  aInstance;
+    otInstance   *aInstance;
 
     ALARM_TRACE("%s\n", __FUNCTION__);
 
@@ -367,15 +367,9 @@ void otPlatAlarmMilliStop(otInstance *aInstance)
     wiced_rtos_unlock_mutex(alarm_cb.p_mutex);
 }
 
-uint32_t otPlatAlarmMilliGetNow(void)
-{
-    return (uint32_t)(clock_SystemTimeMicroseconds64() / 1000);
-}
+uint32_t otPlatAlarmMilliGetNow(void) { return (uint32_t)(clock_SystemTimeMicroseconds64() / 1000); }
 
-uint32_t otPlatAlarmMicroGetNow(void)
-{
-    return clock_SystemTimeMicroseconds32();
-}
+uint32_t otPlatAlarmMicroGetNow(void) { return clock_SystemTimeMicroseconds32(); }
 
 void otPlatAlramInit(void)
 {
@@ -416,7 +410,4 @@ void otPlatAlramInit(void)
     alarm_cb.initialized = WICED_TRUE;
 }
 
-uint16_t otPlatTimeGetXtalAccuracy(void)
-{
-    return XTAL_ACCURACY;
-}
+uint16_t otPlatTimeGetXtalAccuracy(void) { return XTAL_ACCURACY; }

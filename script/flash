@@ -123,9 +123,11 @@ script_dir="$(dirname "$(realpath "$script_path")")"
 repo_dir="$(dirname "$script_dir")"
 
 if [[ $OSTYPE == "cygwin" ]]; then
-    readonly OT_BUILDDIR=$(cygpath -m "${OT_CMAKE_BUILD_DIR:-$repo_dir/build}")
+    OT_BUILDDIR=$(cygpath -m "${OT_CMAKE_BUILD_DIR:-$repo_dir/build}")
+    readonly OT_BUILDDIR
 else
-    readonly OT_BUILDDIR="${OT_CMAKE_BUILD_DIR:-$repo_dir/build}"
+    OT_BUILDDIR="${OT_CMAKE_BUILD_DIR:-$repo_dir/build}"
+    readonly OT_BUILDDIR
 fi
 
 main "$@"
