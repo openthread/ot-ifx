@@ -121,6 +121,7 @@ main()
 set -euxo pipefail
 
 OT_OPTIONS=(
+    "-DBUILD_TESTING=OFF"
     "-DCMAKE_BUILD_TYPE=Debug"
     "-DI15DOT4_IEEE_EUI64="
     "-DOT_APP_NCP=OFF"
