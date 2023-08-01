@@ -35,9 +35,8 @@ target_compile_definitions(
                                 MBEDTLS_CHECK_PARAMS_ASSERT
                                 MBEDTLS_AES_ALT
                                 MBEDTLS_SHA256_ALT
-                                OPENTHREAD_CONFIG_FILE="openthread-core-${IFX_PLATFORM}-config.h"
                                 OPENTHREAD_CONFIG_PLATFORM_ASSERT_MANAGEMENT
-                                OPENTHREAD_PROJECT_CORE_CONFIG_FILE="openthread-core-${IFX_PLATFORM}-config.h"
+                                OPENTHREAD_PLATFORM_CORE_CONFIG_FILE="openthread-core-${IFX_PLATFORM}-config.h"
                           )
 
 # Add platform library
