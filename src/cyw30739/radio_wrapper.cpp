@@ -37,9 +37,7 @@
  *   Abstraction Layer.
  */
 
-#include <common/as_core_type.hpp>
-#include <common/instance.hpp>
-#include <openthread/instance.h>
+#include "mac/mac_frame.hpp"
 
 namespace ot {
 namespace Mac {
