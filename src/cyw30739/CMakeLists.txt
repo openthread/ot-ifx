@@ -31,8 +31,6 @@ target_compile_definitions(
                             ot-config
                             INTERFACE
                                 MBEDTLS_CCM_ALT
-                                MBEDTLS_CHECK_PARAMS
-                                MBEDTLS_CHECK_PARAMS_ASSERT
                                 MBEDTLS_AES_ALT
                                 MBEDTLS_SHA256_ALT
                                 OPENTHREAD_CONFIG_PLATFORM_ASSERT_MANAGEMENT
