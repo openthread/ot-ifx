@@ -100,7 +100,7 @@ main()
         --elf="${OT_BUILDDIR}/${BOARD}/bin/${TARGET}.elf" \
         --uart="${PORT}" \
         --direct=0 \
-        ${VERBOSE:-}
+        ${VERBOSE:+"$VERBOSE"}
     set -u
 }
 

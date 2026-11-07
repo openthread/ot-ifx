@@ -7,7 +7,7 @@
 
 # Table of Contents
 
-- [OpenThread on CYW30739 Examples](#openthread-on-cyw30739-examples)
+- [OpenThread on Infineon CYW30739 Examples](#openthread-on-infineon-cyw30739-examples)
   - [Toolchain](#toolchain)
   - [Building](#building)
   - [Flash Binaries](#flash-binaries)
