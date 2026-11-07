@@ -40,18 +40,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.repository == 'openthread/ot-ifx' && github.run_id) || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
 
   pretty:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        submodules: true
+        submodules: recursive
+        persist-credentials: false
     - name: Bootstrap
       run: |
-        sudo rm /etc/apt/sources.list.d/* && sudo apt-get update
-        sudo apt-get --no-install-recommends install -y clang-format-14 shellcheck
+        sudo apt-get update
+        sudo apt-get --no-install-recommends install -y clang-format-14 clang-format-19 shellcheck
         python3 -m pip install yapf==0.29.0
         sudo snap install shfmt
     - name: Check
@@ -59,16 +63,24 @@ jobs:
         script/make-pretty check
 
   markdown-link-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v5
-    - uses: gaurav-nelson/github-action-markdown-link-check@v1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        use-verbose-mode: 'yes'
+        persist-credentials: false
+    - name: Bootstrap
+      run: |
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    - uses: umbrelladocs/action-linkspector@568ec8d29fa92b31fd9ea5381e155c51e922af83 # v1.5.5
+      env:
+        PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+      with:
+        github_token: ${{ secrets.github_token }}
+        fail_level: error
 
   arm-gcc:
     name: arm-gcc-${{ matrix.gcc_ver }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -79,21 +91,25 @@ jobs:
             gcc_download_url: https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
             gcc_extract_dir: gcc-arm-none-eabi-10-2020-q4-major
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        submodules: true
+        submodules: recursive
+        persist-credentials: false
     - name: Bootstrap
+      env:
+        GCC_DOWNLOAD_URL: ${{ matrix.gcc_download_url }}
       run: |
         cd /tmp
-        sudo rm /etc/apt/sources.list.d/* && sudo apt-get update
+        sudo apt-get update
         sudo apt-get --no-install-recommends install -y lib32z1 ninja-build
-        wget ${{ matrix.gcc_download_url }} -O gcc-arm.tar.bz2
+        wget --tries=4 --timeout=30 "${GCC_DOWNLOAD_URL}" -O gcc-arm.tar.bz2
         tar xjf gcc-arm.tar.bz2
         # use the minimal required cmake version
-        sudo pip3 install -U scikit-build
-        sudo pip3 install -U cmake==3.15.3
+        sudo env PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install -U cmake==3.15.3
         cmake --version | grep 3.15.3
     - name: Build
+      env:
+        GCC_EXTRACT_DIR: ${{ matrix.gcc_extract_dir }}
       run: |
-        export PATH=/tmp/${{ matrix.gcc_extract_dir }}/bin:$PATH
+        export PATH="/tmp/${GCC_EXTRACT_DIR}/bin:${PATH}"
         script/test

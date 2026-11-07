@@ -218,7 +218,7 @@ else
     fi
 
     # Load available boards for target platform
-    available_boards_load $target_platform
+    available_boards_load "$target_platform"
 
     # Check if the target board is available
     echo "${IFX_BOARDS[@]}" | grep -wq "${target_board}" || die "Unsupported board $target_board for $target_platform"
