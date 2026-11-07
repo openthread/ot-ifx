@@ -81,12 +81,27 @@ add_custom_command(
                         $<$<BOOL:${VERBOSE}>:--verbose>
                   )
 
+add_custom_target(infineon-gen-lib-installer DEPENDS ${LIB_INSTALLER_C})
+
 function(add_example_target target_name source_files include_dirs link_libs)
     add_executable(
                     ${target_name}
                     ${source_files}
                     ${LIB_INSTALLER_C}
                   )
+
+    add_dependencies(${target_name} infineon-gen-lib-installer)
+
+    # Example executables share ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}, and
+    # bt_post_build.bash overwrites shared files there (such as
+    # configdef30739A0.hdf, minidriver.hex, and chipload_flags.txt) while cgs
+    # reads configdef30739A0.hdf. Serialize example targets so POST_BUILD
+    # steps cannot race while static libraries still compile in parallel.
+    get_property(prev_example_target GLOBAL PROPERTY OT_IFX_PREV_EXAMPLE_TARGET)
+    if(prev_example_target AND TARGET ${prev_example_target})
+        add_dependencies(${target_name} ${prev_example_target})
+    endif()
+    set_property(GLOBAL PROPERTY OT_IFX_PREV_EXAMPLE_TARGET ${target_name})
 
     set_property(TARGET ${target_name} PROPERTY SUFFIX .elf)
 
