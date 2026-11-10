@@ -37,14 +37,39 @@
  *  http://csrc.nist.gov/publications/fips/fips180-2/fips180-2.pdf
  */
 
+#include "mbedtls/version.h"
+
 #include <wiced_rtos.h>
 #include "mbedtls/error.h"
+#include "mbedtls/platform_util.h"
 #include "mbedtls/sha256.h"
 
 #if defined(MBEDTLS_SHA256_ALT)
 
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#define SHA256_VALIDATE_RET(cond)                     \
+    do                                                \
+    {                                                 \
+        if (!(cond))                                  \
+        {                                             \
+            return MBEDTLS_ERR_SHA256_BAD_INPUT_DATA; \
+        }                                             \
+    } while (0)
+#define SHA256_VALIDATE(cond) \
+    do                        \
+    {                         \
+        if (!(cond))          \
+        {                     \
+            return;           \
+        }                     \
+    } while (0)
+#ifndef MBEDTLS_ERR_SHA256_HW_ACCEL_FAILED
+#define MBEDTLS_ERR_SHA256_HW_ACCEL_FAILED MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED
+#endif
+#else
 #define SHA256_VALIDATE_RET(cond) MBEDTLS_INTERNAL_VALIDATE_RET(cond, MBEDTLS_ERR_SHA256_BAD_INPUT_DATA)
 #define SHA256_VALIDATE(cond) MBEDTLS_INTERNAL_VALIDATE(cond)
+#endif
 
 static void print_mem_alloc_fail(void) { printf("SHA256_alt: alloc fail\n"); }
 
@@ -146,7 +171,11 @@ error:
 /*
  * SHA-256 context setup
  */
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+int mbedtls_sha256_starts(mbedtls_sha256_context *ctx, int is224)
+#else
 int mbedtls_sha256_starts_ret(mbedtls_sha256_context *ctx, int is224)
+#endif
 {
     SHA256_VALIDATE_RET(ctx != NULL);
     SHA256_VALIDATE_RET(is224 == 0 || is224 == 1);
@@ -162,7 +191,9 @@ int mbedtls_sha256_starts_ret(mbedtls_sha256_context *ctx, int is224)
     return (0);
 }
 
+#if (MBEDTLS_VERSION_NUMBER < 0x03000000) && !defined(MBEDTLS_DEPRECATED_REMOVED)
 void mbedtls_sha256_starts(mbedtls_sha256_context *ctx, int is224) { mbedtls_sha256_starts_ret(ctx, is224); }
+#endif
 
 int mbedtls_internal_sha256_process(mbedtls_sha256_context *ctx, const unsigned char data[64])
 {
@@ -171,12 +202,18 @@ int mbedtls_internal_sha256_process(mbedtls_sha256_context *ctx, const unsigned 
     return 0;
 }
 
+#if (MBEDTLS_VERSION_NUMBER < 0x03000000) && !defined(MBEDTLS_DEPRECATED_REMOVED)
 void mbedtls_sha256_process(mbedtls_sha256_context *ctx, const unsigned char data[64])
 {
     mbedtls_internal_sha256_process(ctx, data);
 }
+#endif
 
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+int mbedtls_sha256_update(mbedtls_sha256_context *ctx, const unsigned char *input, size_t ilen)
+#else
 int mbedtls_sha256_update_ret(mbedtls_sha256_context *ctx, const unsigned char *input, size_t ilen)
+#endif
 {
     sha_in_node_t *p_node;
 
@@ -198,15 +235,21 @@ int mbedtls_sha256_update_ret(mbedtls_sha256_context *ctx, const unsigned char *
     return (0);
 }
 
+#if (MBEDTLS_VERSION_NUMBER < 0x03000000) && !defined(MBEDTLS_DEPRECATED_REMOVED)
 void mbedtls_sha256_update(mbedtls_sha256_context *ctx, const unsigned char *input, size_t ilen)
 {
     mbedtls_sha256_update_ret(ctx, input, ilen);
 }
+#endif
 
 /*
  * SHA-256 final digest
  */
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+int mbedtls_sha256_finish(mbedtls_sha256_context *ctx, unsigned char *output)
+#else
 int mbedtls_sha256_finish_ret(mbedtls_sha256_context *ctx, unsigned char output[32])
+#endif
 {
     uint8_t        sha_ret;
     tHW_SHA2       hw_sha256;
@@ -260,9 +303,11 @@ int mbedtls_sha256_finish_ret(mbedtls_sha256_context *ctx, unsigned char output[
     return (0);
 }
 
+#if (MBEDTLS_VERSION_NUMBER < 0x03000000) && !defined(MBEDTLS_DEPRECATED_REMOVED)
 void mbedtls_sha256_finish(mbedtls_sha256_context *ctx, unsigned char output[32])
 {
     mbedtls_sha256_finish_ret(ctx, output);
 }
+#endif
 
 #endif /* MBEDTLS_SHA256_ALT */

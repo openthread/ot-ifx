@@ -31,6 +31,7 @@
  *   This file implements the OpenThread platform abstraction for the debug log service.
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <openthread/platform/logging.h>
 #include <openthread/platform/toolchain.h>

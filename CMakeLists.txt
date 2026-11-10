@@ -61,6 +61,9 @@ if(PLATFORM_CRYPTO_FILE EQUAL 1)
     include("${PROJECT_SOURCE_DIR}/src/${IFX_PLATFORM}/crypto.cmake")
 endif()
 
+# Allow linking platform libraries into mbedcrypto created in openthread subdirectory
+set(CMAKE_POLICY_DEFAULT_CMP0079 NEW)
+
 # Add openthread SDK.
 add_subdirectory(openthread)
 
@@ -86,6 +89,16 @@ add_subdirectory(src/${IFX_PLATFORM})
 
 # Add third party information, ex. platform and board
 add_subdirectory(third_party)
+
+# Mbed TLS >= 3.0 removed thirdparty_src and thirdparty_lib from its CMakeLists.txt
+if(TARGET mbedcrypto AND EXISTS "${PROJECT_SOURCE_DIR}/openthread/third_party/mbedtls/repo/include/mbedtls/build_info.h")
+    if(thirdparty_src)
+        target_sources(mbedcrypto PRIVATE ${thirdparty_src})
+    endif()
+    if(thirdparty_lib)
+        target_link_libraries(mbedcrypto PUBLIC ${thirdparty_lib})
+    endif()
+endif()
 
 # Disable building the default openthread executables
 set(OT_BUILD_EXECUTABLES OFF)

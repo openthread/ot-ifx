@@ -35,13 +35,34 @@
 
 #include <string.h>
 
+#include "mbedtls/version.h"
+
 #include "mbedtls/aes.h"
 #include "mbedtls/error.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/platform_util.h"
 
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#define AES_VALIDATE_RET(cond)                     \
+    do                                             \
+    {                                              \
+        if (!(cond))                               \
+        {                                          \
+            return MBEDTLS_ERR_AES_BAD_INPUT_DATA; \
+        }                                          \
+    } while (0)
+#define AES_VALIDATE(cond) \
+    do                     \
+    {                      \
+        if (!(cond))       \
+        {                  \
+            return;        \
+        }                  \
+    } while (0)
+#else
 #define AES_VALIDATE_RET(cond) MBEDTLS_INTERNAL_VALIDATE_RET(cond, MBEDTLS_ERR_AES_BAD_INPUT_DATA)
 #define AES_VALIDATE(cond) MBEDTLS_INTERNAL_VALIDATE(cond)
+#endif
 
 #if defined(MBEDTLS_AES_ALT)
 
@@ -90,6 +111,7 @@ int mbedtls_aes_setkey_enc(mbedtls_aes_context *ctx, const unsigned char *key, u
     return (0);
 }
 
+#if !defined(MBEDTLS_BLOCK_CIPHER_NO_DECRYPT)
 /*
  * AES key schedule (decryption)
  */
@@ -119,6 +141,7 @@ int mbedtls_aes_setkey_dec(mbedtls_aes_context *ctx, const unsigned char *key, u
 
     return (0);
 }
+#endif /* !MBEDTLS_BLOCK_CIPHER_NO_DECRYPT */
 
 /*
  * AES-ECB block encryption
@@ -129,11 +152,14 @@ int mbedtls_internal_aes_encrypt(mbedtls_aes_context *ctx, const unsigned char i
     return (0);
 }
 
+#if (MBEDTLS_VERSION_NUMBER < 0x03000000) && !defined(MBEDTLS_DEPRECATED_REMOVED)
 void mbedtls_aes_encrypt(mbedtls_aes_context *ctx, const unsigned char input[16], unsigned char output[16])
 {
     mbedtls_internal_aes_encrypt(ctx, input, output);
 }
+#endif
 
+#if !defined(MBEDTLS_BLOCK_CIPHER_NO_DECRYPT)
 /*
  * AES-ECB block decryption
  */
@@ -143,10 +169,13 @@ int mbedtls_internal_aes_decrypt(mbedtls_aes_context *ctx, const unsigned char i
     return (0);
 }
 
+#if (MBEDTLS_VERSION_NUMBER < 0x03000000) && !defined(MBEDTLS_DEPRECATED_REMOVED)
 void mbedtls_aes_decrypt(mbedtls_aes_context *ctx, const unsigned char input[16], unsigned char output[16])
 {
     mbedtls_internal_aes_decrypt(ctx, input, output);
 }
+#endif
+#endif /* !MBEDTLS_BLOCK_CIPHER_NO_DECRYPT */
 
 /*
  * AES-ECB block encryption/decryption
@@ -159,9 +188,17 @@ int mbedtls_aes_crypt_ecb(mbedtls_aes_context *ctx, int mode, const unsigned cha
     AES_VALIDATE_RET(mode == MBEDTLS_AES_ENCRYPT || mode == MBEDTLS_AES_DECRYPT);
 
     if (mode == MBEDTLS_AES_ENCRYPT)
+    {
         return (mbedtls_internal_aes_encrypt(ctx, input, output));
+    }
     else
+    {
+#if !defined(MBEDTLS_BLOCK_CIPHER_NO_DECRYPT)
         return (mbedtls_internal_aes_decrypt(ctx, input, output));
+#else
+        return (MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED);
+#endif
+    }
 }
 
 #endif /* MBEDTLS_AES_ALT */
