@@ -54,13 +54,17 @@ typedef struct
 typedef struct mbedtls_aes_context
 {
     platform_aes_context aes_enc_ctx[1];
+#if !defined(MBEDTLS_BLOCK_CIPHER_NO_DECRYPT)
     platform_aes_context aes_dec_ctx[1];
+#endif
 } mbedtls_aes_context;
 
 uint8_t smp_aes_set_key(const unsigned char key[], uint8_t keylen, platform_aes_context ctx[1]);
 
 uint8_t smp_aes_encrypt(const unsigned char in[N_BLOCK], unsigned char out[N_BLOCK], const platform_aes_context ctx[1]);
 
+#if !defined(MBEDTLS_BLOCK_CIPHER_NO_DECRYPT)
 uint8_t smp_aes_decrypt(const unsigned char in[N_BLOCK], unsigned char out[N_BLOCK], const platform_aes_context ctx[1]);
+#endif
 
 #endif /* MBEDTLS_AES_ALT_H */

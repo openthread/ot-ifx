@@ -35,11 +35,7 @@
  * RFC 5116 "An Interface and Algorithms for Authenticated Encryption"
  */
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
+#include "mbedtls/version.h"
 
 #include <wiced_rtos.h>
 
@@ -61,8 +57,27 @@
 #define mbedtls_calloc calloc
 #define mbedtls_free free
 
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#define CCM_VALIDATE_RET(cond)                \
+    do                                        \
+    {                                         \
+        if (!(cond))                          \
+        {                                     \
+            return MBEDTLS_ERR_CCM_BAD_INPUT; \
+        }                                     \
+    } while (0)
+#define CCM_VALIDATE(cond) \
+    do                     \
+    {                      \
+        if (!(cond))       \
+        {                  \
+            return;        \
+        }                  \
+    } while (0)
+#else
 #define CCM_VALIDATE_RET(cond) MBEDTLS_INTERNAL_VALIDATE_RET(cond, MBEDTLS_ERR_CCM_BAD_INPUT)
 #define CCM_VALIDATE(cond) MBEDTLS_INTERNAL_VALIDATE(cond)
+#endif
 
 static wiced_mutex_t *mutex = NULL;
 
@@ -441,6 +456,58 @@ void mbedtls_ccm_get_decrypt_tag(mbedtls_ccm_context *ctx, const unsigned char *
 {
     memcpy((void *)tag, ctx->decrypt_tag, tag_len);
 }
+
+#if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+int mbedtls_ccm_starts(mbedtls_ccm_context *ctx, int mode, const unsigned char *iv, size_t iv_len)
+{
+    (void)ctx;
+    (void)mode;
+    (void)iv;
+    (void)iv_len;
+    return (MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED);
+}
+
+int mbedtls_ccm_set_lengths(mbedtls_ccm_context *ctx, size_t total_ad_len, size_t plaintext_len, size_t tag_len)
+{
+    (void)ctx;
+    (void)total_ad_len;
+    (void)plaintext_len;
+    (void)tag_len;
+    return (MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED);
+}
+
+int mbedtls_ccm_update_ad(mbedtls_ccm_context *ctx, const unsigned char *ad, size_t ad_len)
+{
+    (void)ctx;
+    (void)ad;
+    (void)ad_len;
+    return (MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED);
+}
+
+int mbedtls_ccm_update(mbedtls_ccm_context *ctx,
+                       const unsigned char *input,
+                       size_t               input_len,
+                       unsigned char       *output,
+                       size_t               output_size,
+                       size_t              *output_len)
+{
+    (void)ctx;
+    (void)input;
+    (void)input_len;
+    (void)output;
+    (void)output_size;
+    (void)output_len;
+    return (MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED);
+}
+
+int mbedtls_ccm_finish(mbedtls_ccm_context *ctx, unsigned char *tag, size_t tag_len)
+{
+    (void)ctx;
+    (void)tag;
+    (void)tag_len;
+    return (MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED);
+}
+#endif /* MBEDTLS_VERSION_NUMBER >= 0x03000000 */
 
 #endif /* !MBEDTLS_CCM_ALT */
 

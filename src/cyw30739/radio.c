@@ -2700,15 +2700,21 @@ static void radio_i15dot4_thread_data_conf_handler(void)
 #if PACKET_STATISTICS
 
     if (aError == OT_ERROR_NONE)
+    {
         radio_cb.statistics.tx.status.success++;
+    }
     else if (aError == OT_ERROR_NO_ACK)
+    {
         radio_cb.statistics.tx.status.no_ack++;
+    }
     else
+    {
         radio_cb.statistics.tx.status.channel_access_failure++;
+    }
 
 #endif // PACKET_STATISTICS
 
-        /* Check if the ACK frame exist. */
+    /* Check if the ACK frame exist. */
 #if I15DOT4_VARAIABLE_ACK_LENGTH
     if (((radio_data_wait_conf_entry_t *)p_node)->ackFrame.length)
     {

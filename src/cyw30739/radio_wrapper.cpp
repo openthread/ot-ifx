@@ -37,7 +37,118 @@
  *   Abstraction Layer.
  */
 
+#include <openthread/instance.h>
+
 #include "mac/mac_frame.hpp"
+
+#if OPENTHREAD_API_VERSION >= 620
+
+namespace ot {
+namespace Mac {
+
+class RadioWrapperParseInfo : public Frame::ParseInfo
+{
+public:
+    uint8_t GetSecurityHeaderIndex(const Frame &aFrame)
+    {
+        uint8_t index = 0xff;
+
+        if (ParseFrom(aFrame, Frame::kParseSecurityHeader) == kErrorNone)
+        {
+            index = static_cast<uint8_t>((mFrameCounterBytes - 1) - aFrame.GetPsdu());
+        }
+
+        return index;
+    }
+
+    uint8_t GetSecurityHeaderLength(const Frame &aFrame)
+    {
+        uint8_t length = 0;
+
+        if ((ParseFrom(aFrame, Frame::kParseFully) == kErrorNone) && mParsedSecurityHeader)
+        {
+            uint8_t secHdrIdx = static_cast<uint8_t>((mFrameCounterBytes - 1) - aFrame.GetPsdu());
+
+            length = static_cast<uint8_t>(mHeader.GetLength() - secHdrIdx);
+        }
+
+        return length;
+    }
+};
+
+} // namespace Mac
+
+/*
+ * Get start index of frame auxiliary security header.
+ */
+extern "C" uint8_t radio_wrapper_mac_frame_security_header_idx_get(otRadioFrame *aFrame)
+{
+    Mac::RadioWrapperParseInfo frameInfo;
+
+    return frameInfo.GetSecurityHeaderIndex(*static_cast<const Mac::Frame *>(aFrame));
+}
+
+/*
+ * Get length of frame auxiliary security header.
+ */
+extern "C" uint8_t radio_wrapper_mac_frame_security_header_length_get(otRadioFrame *aFrame)
+{
+    Mac::RadioWrapperParseInfo frameInfo;
+
+    return frameInfo.GetSecurityHeaderLength(*static_cast<const Mac::Frame *>(aFrame));
+}
+
+/*
+ * Get start index of frame payload.
+ */
+extern "C" uint8_t radio_wrapper_mac_frame_payload_index_get(otRadioFrame *aFrame)
+{
+    Mac::Frame::ParseInfo frameInfo;
+    const Mac::Frame     &frame = *static_cast<const Mac::Frame *>(aFrame);
+
+    if (frameInfo.ParseFrom(frame, Mac::Frame::kParseFully) != kErrorNone)
+    {
+        return 0xff;
+    }
+
+    return static_cast<uint8_t>(frameInfo.mHeader.GetLength());
+}
+
+/*
+ * Get lenght of frame payload.
+ */
+extern "C" uint16_t radio_wrapper_mac_frame_payload_length_get(otRadioFrame *aFrame)
+{
+    Mac::Frame::ParseInfo frameInfo;
+    const Mac::Frame     &frame = *static_cast<const Mac::Frame *>(aFrame);
+
+    if (frameInfo.ParseFrom(frame, Mac::Frame::kParseFully) != kErrorNone)
+    {
+        return 0;
+    }
+
+    return frameInfo.mPayload.GetLength();
+}
+
+/*
+ * Get key id mode in the frame.
+ */
+extern "C" uint8_t radio_wrapper_mac_frame_key_id_mode_get(otRadioFrame *aFrame)
+{
+    Mac::Frame::ParseInfo frameInfo;
+    const Mac::Frame     &frame = *static_cast<const Mac::Frame *>(aFrame);
+
+    if (frameInfo.ParseFrom(frame, Mac::Frame::kParseSecurityHeader) != kErrorNone)
+    {
+        return 0;
+    }
+
+    return static_cast<uint8_t>(frameInfo.mKeyIdMode);
+}
+
+} // namespace ot
+
+#else // OPENTHREAD_API_VERSION >= 620
 
 namespace ot {
 namespace Mac {
@@ -100,3 +211,5 @@ extern "C" uint8_t radio_wrapper_mac_frame_key_id_mode_get(otRadioFrame *aFrame)
 }
 
 } // namespace ot
+
+#endif // OPENTHREAD_API_VERSION >= 620

@@ -31,13 +31,20 @@ target_compile_definitions(
                             ot-config
                             INTERFACE
                                 MBEDTLS_CCM_ALT
-                                MBEDTLS_CHECK_PARAMS
-                                MBEDTLS_CHECK_PARAMS_ASSERT
                                 MBEDTLS_AES_ALT
                                 MBEDTLS_SHA256_ALT
                                 OPENTHREAD_CONFIG_PLATFORM_ASSERT_MANAGEMENT
                                 OPENTHREAD_PLATFORM_CORE_CONFIG_FILE="openthread-core-${IFX_PLATFORM}-config.h"
                           )
+
+if(NOT EXISTS "${PROJECT_SOURCE_DIR}/openthread/third_party/mbedtls/repo/include/mbedtls/build_info.h")
+    target_compile_definitions(
+                                ot-config
+                                INTERFACE
+                                    MBEDTLS_CHECK_PARAMS
+                                    MBEDTLS_CHECK_PARAMS_ASSERT
+                              )
+endif()
 
 # Add platform library
 add_library(
