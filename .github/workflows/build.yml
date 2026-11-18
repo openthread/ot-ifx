@@ -122,13 +122,9 @@ jobs:
       matrix:
         include:
           - gcc_ver: 9
-            gcc_download_url: https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2020q2/gcc-arm-none-eabi-9-2020-q2-update-x86_64-linux.tar.bz2
-            gcc_mirror_url: https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/9-2020q2/gcc-arm-none-eabi-9-2020-q2-update-x86_64-linux.tar.bz2
-            gcc_extract_dir: gcc-arm-none-eabi-9-2020-q2-update
+            toolchain_ver: 9-2020q2
           - gcc_ver: 10
-            gcc_download_url: https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
-            gcc_mirror_url: https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
-            gcc_extract_dir: gcc-arm-none-eabi-10-2020-q4-major
+            toolchain_ver: 10-2020q4
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -136,36 +132,18 @@ jobs:
         persist-credentials: false
     - name: Bootstrap
       env:
-        GCC_DOWNLOAD_URL: ${{ matrix.gcc_download_url }}
-        GCC_MIRROR_URL: ${{ matrix.gcc_mirror_url }}
-        GCC_EXTRACT_DIR: ${{ matrix.gcc_extract_dir }}
+        GCC_VER: ${{ matrix.gcc_ver }}
+        TOOLCHAIN_VER: ${{ matrix.toolchain_ver }}
       run: |
         sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
-        sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 --no-install-recommends install -y bzip2 ca-certificates curl lib32z1 ninja-build
-        success=false
-        for url in "${GCC_DOWNLOAD_URL}" "${GCC_MIRROR_URL}"; do
-          rm -rf /tmp/gcc-arm.tar.bz2 "/tmp/${GCC_EXTRACT_DIR}"
-          if curl --proto '=https' --tlsv1.2 -fsSL --retry 2 --retry-delay 2 --retry-max-time 80 \
-            --connect-timeout 15 --max-time 75 --speed-limit 1048576 --speed-time 15 \
-            -o /tmp/gcc-arm.tar.bz2 "${url}" \
-            && tar xjf /tmp/gcc-arm.tar.bz2 -C /tmp; then
-            success=true
-            break
-          fi
-          echo "WARNING: failed to download or extract from ${url}" >&2
-        done
-        rm -f /tmp/gcc-arm.tar.bz2
-        if [ "${success}" = false ]; then
-          echo "ERROR: failed to download or extract ARM toolchain" >&2
-          rm -rf "/tmp/${GCC_EXTRACT_DIR:?}"
-          exit 1
-        fi
+        sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 --no-install-recommends install -y bzip2 ca-certificates curl lib32z1 ninja-build xz-utils
+        openthread/script/install-arm-toolchain.sh "${TOOLCHAIN_VER}" "/tmp/arm-gcc-${GCC_VER}"
         # use the minimal required cmake version
         sudo env PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --retries 5 --timeout 30 -U cmake==3.15.3
         cmake --version | grep 3.15.3
     - name: Build
       env:
-        GCC_EXTRACT_DIR: ${{ matrix.gcc_extract_dir }}
+        GCC_VER: ${{ matrix.gcc_ver }}
       run: |
-        export PATH="/tmp/${GCC_EXTRACT_DIR}/bin:${PATH}"
+        export PATH="/tmp/arm-gcc-${GCC_VER}/bin:${PATH}"
         script/test
